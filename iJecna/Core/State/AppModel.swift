@@ -159,7 +159,13 @@ final class AppModel {
         guard force || timetable.isIdle else { return }
         timetable.markRefreshing()
         do {
-            timetable = .loaded(try await service.timetable(year: selectedYear, periodId: selectedTimetablePeriodId))
+            let page = try await service.timetable(year: selectedYear, periodId: selectedTimetablePeriodId)
+            timetable = .loaded(page)
+            // Server sám určí, kterou variantu ukázal; bez toho by přepínač
+            // po načtení neukazoval, co je na obrazovce.
+            if selectedTimetablePeriodId == nil {
+                selectedTimetablePeriodId = page.periodOptions.first(where: \.isSelected)?.id
+            }
         } catch let error as JecnaError {
             handle(error, into: &timetable)
         } catch {

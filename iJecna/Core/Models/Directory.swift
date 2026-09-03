@@ -143,12 +143,16 @@ struct Guardian: Identifiable, Hashable, Codable, Sendable {
 
 /// Jeden řádek z tabulky profilu — popisek a hodnota tak, jak je uvádí web.
 struct ProfileField: Identifiable, Hashable, Codable, Sendable {
+    /// Pořadí na stránce. Slouží i jako identita: popisek se může opakovat —
+    /// profil studenta uvádí „Uživatelské jméno“ dvakrát — a dvě stejná id
+    /// by seznamu rozhodila vykreslování.
+    var order: Int = 0
     let label: String
     let value: String
     /// Cíl odkazu, když je hodnota odkazem (e-mail, učebna).
     var link: String? = nil
 
-    var id: String { label }
+    var id: String { "\(order)-\(label)" }
 
     /// Ikona odvozená z popisku, aby seznam nebyl jen sloupec textu.
     var symbolName: String {
@@ -176,6 +180,8 @@ struct Student: Hashable, Codable, Sendable {
     /// Skupiny, do kterých student patří, např. „1/2, S1“.
     let classGroups: String?
     let birthDate: Date?
+    /// Místo narození. Web ho uvádí ve stejné buňce jako datum.
+    var birthPlace: String? = nil
     let permanentAddress: String?
     let guardians: [Guardian]
     let profilePicturePath: String?

@@ -15,39 +15,81 @@ enum StudentProfileParser {
         let profile = UserProfileTable(document)
         let identity = self.identity(in: document)
 
-        // Pořadí zdrojů není libovolné. Na profilu je jméno v nadpisu, ale na
-        // podstránkách je v nadpisu název stránky — proto se nadpis bere jen
-        // tam, kde je i tabulka profilu. Jinak by se student jmenoval „Skříňka“.
+        // Tabulka uvádí jméno rovnou ve správném pořadí, nadpis ho má obráceně.
+        // Drobečková navigace tady jméno nenese — odkazuje na třídu.
         let heading = profile.isEmpty
             ? nil
             : HTML.first(document, "h1 span.label.label-icon")?.normalizedText.nilIfEmpty
 
-        let rawName = heading
-            ?? HTML.first(document, "h1 span.breadcrumb a")?.normalizedText.nilIfEmpty
-            ?? profile.value("Jméno")
-            // Poslední záchrana pro případ, že by profil neměl ani tabulku,
-            // ani drobečkovou navigaci. Sem se dostane jen stránka profilu,
-            // takže v nadpisu bude jméno.
-            ?? HTML.first(document, "h1 span.label.label-icon")?.normalizedText.nilIfEmpty
+        let fullName = profile.value("Celé jméno", "Jméno")
+            ?? heading.map(displayName)
+            ?? identity.fullName
 
-        guard let fullName = rawName.map(displayName) else {
+        guard let fullName else {
             throw HTMLParseError(page: page, detail: "na stránce není jméno studenta")
         }
+
+        let classAndGroups = parseClassAndGroups(profile.value("Třída, skupiny", "Třída"))
+        let birth = parseBirth(profile.value("Narození", "Datum narození"))
 
         return Student(
             fullName: fullName,
             username: profile.value("Uživatelské jméno") ?? identity.username ?? username,
-            // Když tabulka e-mail neuvádí, najdeme ho podle odkazu — na profilu
-            // je školní adresa jediný mailto na stránce.
-            schoolMail: profile.value("E-mail", "Email") ?? schoolMail(in: document) ?? "",
-            className: profile.value("Třída", "Třída/skupina", "Studijní skupina"),
-            classGroups: profile.value("Skupiny", "Skupina", "Dělení", "Zařazení do skupin"),
-            birthDate: profile.value("Datum narození").flatMap(JecnaDate.fromNumeric),
-            permanentAddress: profile.value("Trvalé bydliště", "Adresa", "Bydliště"),
+            // Popisek školní adresy nese i poznámku o přeposílání,
+            // spolehlivý je odkaz.
+            schoolMail: mailAddress(profile.link("Školní e-mail"))
+                ?? profile.value("Školní e-mail")
+                ?? schoolMail(in: document)
+                ?? "",
+            className: classAndGroups.className ?? classFromBreadcrumb(document),
+            classGroups: classAndGroups.groups,
+            birthDate: birth.date,
+            birthPlace: birth.place,
+            permanentAddress: profile.value("Trvalá adresa", "Trvalé bydliště", "Adresa"),
             guardians: [],
             profilePicturePath: HTML.first(document, "div.profilephoto img")?.attribute("src"),
             details: profile.rows
         )
+    }
+
+    /// `C3c, skupiny: A2` — třída a za ní volitelný výčet skupin.
+    static func parseClassAndGroups(_ raw: String?) -> (className: String?, groups: String?) {
+        guard let raw = raw?.normalizedWhitespace, !raw.isEmpty else { return (nil, nil) }
+
+        guard let marker = raw.range(of: "skupin", options: .caseInsensitive) else {
+            return (raw.trimmingCharacters(in: CharacterSet(charactersIn: " ,")).nilIfEmpty, nil)
+        }
+
+        let className = String(raw[..<marker.lowerBound])
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,"))
+            .nilIfEmpty
+
+        let groups = String(raw[marker.upperBound...])
+            .drop { $0 != ":" }
+            .dropFirst()
+            .trimmingCharacters(in: .whitespaces)
+            .nilIfEmpty
+
+        return (className, groups)
+    }
+
+    /// `02.05.2008, DNĚPROPETROVSK` — datum a místo v jedné buňce.
+    static func parseBirth(_ raw: String?) -> (date: Date?, place: String?) {
+        guard let raw = raw?.normalizedWhitespace, !raw.isEmpty else { return (nil, nil) }
+        var fields = raw.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let date = fields.first.flatMap(JecnaDate.fromNumeric)
+        if date != nil { fields.removeFirst() }
+        return (date, fields.joined(separator: ", ").nilIfEmpty)
+    }
+
+    /// Na profilu odkazuje drobečková navigace na třídu (`/trida/C3c`).
+    private static func classFromBreadcrumb(_ document: Document) -> String? {
+        HTML.first(document, "h1 span.breadcrumb a[href^=/trida/]")?.normalizedText.nilIfEmpty
+    }
+
+    private static func mailAddress(_ link: String?) -> String? {
+        guard let link, link.hasPrefix("mailto:") else { return nil }
+        return String(link.dropFirst("mailto:".count)).nilIfEmpty
     }
 
     /// Jméno a uživatelské jméno přihlášeného studenta.
@@ -60,9 +102,9 @@ enum StudentProfileParser {
             .compactMap { $0.hrefLastComponent() }
             .first
 
-        // Drobečková navigace v nadpisu nese jméno, příjmením napřed.
-        let breadcrumb = HTML.first(document, "h1 span.breadcrumb a")
-            ?? HTML.first(document, "span.breadcrumb a")
+        // Drobečková navigace nese jméno jen na podstránkách studenta;
+        // na samotném profilu odkazuje na třídu, a to jméno není.
+        let breadcrumb = HTML.first(document, "span.breadcrumb a[href^=/student/]")
 
         return (breadcrumb.map { displayName($0.normalizedText) }, username)
     }

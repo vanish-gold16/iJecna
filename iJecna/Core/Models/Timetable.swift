@@ -210,9 +210,25 @@ struct TimetablePeriodOption: Identifiable, Hashable, Codable, Sendable {
     var displayName: String {
         let formatter = DateFormatter.jecnaShortDate
         let fromText = formatter.string(from: from)
-        let toText = to.map(formatter.string(from:)) ?? "?"
-        let range = "\(fromText) – \(toText)"
+        guard let to else {
+            return header.map { "\($0) — od \(fromText)" } ?? "od \(fromText)"
+        }
+        let range = "\(fromText) – \(formatter.string(from: to))"
         return header.map { "\($0): \(range)" } ?? range
+    }
+
+    /// Krátké označení do podtitulku obrazovky.
+    var shortName: String {
+        header ?? "Rozvrh od \(DateFormatter.jecnaDayMonth.string(from: from))"
+    }
+
+    /// Platí varianta právě teď? Mimořádný rozvrh na příští týden by neměl
+    /// vypadat jako ten, podle kterého se dnes učí.
+    func isActive(on date: Date = .now, calendar: Calendar = .prague) -> Bool {
+        let day = Date.startOfSchoolDay(date, calendar: calendar)
+        guard day >= Date.startOfSchoolDay(from, calendar: calendar) else { return false }
+        guard let to else { return true }
+        return day <= Date.startOfSchoolDay(to, calendar: calendar)
     }
 }
 

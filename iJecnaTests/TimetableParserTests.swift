@@ -132,3 +132,54 @@ private extension XCTestCase {
         XCTAssertEqual(lhs?.id, rhs?.id, "Obě hodiny mají patřit do stejného bloku", file: file, line: line)
     }
 }
+
+/// Varianty rozvrhu — řádný, dočasný, mimořádný.
+final class TimetableVariantTests: XCTestCase {
+
+    private func option(header: String?, fromOffset: Int, toOffset: Int?) -> TimetablePeriodOption {
+        let calendar = Calendar.prague
+        return TimetablePeriodOption(
+            id: 1,
+            header: header,
+            from: calendar.date(byAdding: .day, value: fromOffset, to: .now)!,
+            to: toOffset.map { calendar.date(byAdding: .day, value: $0, to: .now)! },
+            isSelected: false
+        )
+    }
+
+    func testOpenEndedVariantIsActive() {
+        // „Od 1.9.“ bez konce platí, dokud ji škola nevymění.
+        XCTAssertTrue(option(header: "Dočasný rozvrh", fromOffset: -10, toOffset: nil).isActive())
+    }
+
+    func testFutureVariantIsNotActiveYet() {
+        // Mimořádný rozvrh na příští týden se nesmí tvářit jako dnešní.
+        XCTAssertFalse(option(header: "Mimořádný rozvrh", fromOffset: 3, toOffset: 7).isActive())
+    }
+
+    func testPastVariantIsNoLongerActive() {
+        XCTAssertFalse(option(header: "Mimořádný rozvrh", fromOffset: -10, toOffset: -3).isActive())
+    }
+
+    func testVariantSpanningTodayIsActive() {
+        XCTAssertTrue(option(header: nil, fromOffset: -2, toOffset: 2).isActive())
+    }
+
+    func testShortNameFallsBackToStartDate() {
+        XCTAssertEqual(option(header: "Mimořádný rozvrh", fromOffset: 0, toOffset: nil).shortName, "Mimořádný rozvrh")
+        XCTAssertTrue(option(header: nil, fromOffset: 0, toOffset: nil).shortName.hasPrefix("Rozvrh od"))
+    }
+
+    func testOpenEndedVariantReadsWithoutQuestionMark() {
+        // Dřív se konec bez data vypisoval jako „?“, což vypadalo jako chyba.
+        let name = option(header: "Dočasný rozvrh září", fromOffset: -1, toOffset: nil).displayName
+        XCTAssertFalse(name.contains("?"))
+        XCTAssertTrue(name.contains("od"))
+    }
+
+    func testLiveFixtureVariantIsRecognised() throws {
+        let page = try TimetablePageParser.parse(Fixture.timetable.html())
+        let option = try XCTUnwrap(page.periodOptions.first)
+        XCTAssertEqual(option.shortName, "Dočasný rozvrh září 2026")
+    }
+}

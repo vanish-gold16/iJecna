@@ -36,7 +36,7 @@ struct TimetableView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 130)
                 }
-                if let page = model.timetable.value, page.periodOptions.count > 1 {
+                if let page = model.timetable.value, !page.periodOptions.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
                         periodOptionMenu(page.periodOptions)
                     }
@@ -46,8 +46,19 @@ struct TimetableView: View {
         }
     }
 
+    /// V podtitulku je vidět, podle které varianty se právě učí — mimořádný
+    /// nebo dočasný rozvrh se od řádného může lišit celým dnem.
     private var subtitle: String {
-        model.selectedYear.displayName
+        guard let option = selectedOption else { return model.selectedYear.displayName }
+        return option.shortName
+    }
+
+    private var selectedOption: TimetablePeriodOption? {
+        guard let options = model.timetable.value?.periodOptions, !options.isEmpty else { return nil }
+        if let id = model.selectedTimetablePeriodId, let match = options.first(where: { $0.id == id }) {
+            return match
+        }
+        return options.first(where: \.isSelected) ?? options.first
     }
 
     @ViewBuilder
@@ -129,16 +140,24 @@ struct TimetableView: View {
         .padding(.bottom, 12)
     }
 
+    /// Přepínač variant rozvrhu — řádný, dočasný, mimořádný.
+    ///
+    /// Ukazuje se i když je varianta jediná: bez toho by student nevěděl,
+    /// že se dívá na dočasný rozvrh, a divil by se, proč nesedí.
     private func periodOptionMenu(_ options: [TimetablePeriodOption]) -> some View {
         @Bindable var model = model
         return Menu {
-            Picker("Období rozvrhu", selection: $model.selectedTimetablePeriodId) {
+            Picker("Varianta rozvrhu", selection: $model.selectedTimetablePeriodId) {
                 ForEach(options) { option in
-                    Text(option.displayName).tag(Optional(option.id))
+                    Text(option.displayName + (option.isActive() ? " • platí teď" : ""))
+                        .tag(Optional(option.id))
                 }
             }
+            .onChange(of: model.selectedTimetablePeriodId) { _, _ in
+                Task { await model.loadTimetable(force: true) }
+            }
         } label: {
-            Image(systemName: "calendar.badge.exclamationmark")
+            Image(systemName: options.count > 1 ? "calendar.badge.exclamationmark" : "calendar.badge.clock")
         }
         .accessibilityLabel("Varianta rozvrhu")
     }

@@ -16,6 +16,8 @@ enum Fixture: String, CaseIterable {
     case teacherDetail = "SPŠE Ječná - Mgr. Lenka Brůnová.html"
     case rooms = "SPŠE Ječná - Učebny.html"
     case locker = "SPŠE Ječná - Skříňka.html"
+    /// Pozor: v názvu souboru je pevná mezera, tak ho web pojmenoval.
+    case studentProfile = "SPŠE Ječná - Mytrofanov\u{00A0}Ivan.html"
 
     private static let directory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()

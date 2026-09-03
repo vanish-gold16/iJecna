@@ -34,7 +34,7 @@ struct UserProfileTable {
 
             values[key] = value
             if let href { links[key] = href }
-            rows.append(ProfileField(label: label, value: value, link: href))
+            rows.append(ProfileField(order: rows.count, label: label, value: value, link: href))
         }
 
         self.values = values
