@@ -19,6 +19,8 @@ struct DashboardView: View {
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
 
+                        TasksSummarySection(selection: $selection)
+
                         TodayScheduleSection(selection: $selection)
 
                         AverageSummarySection(selection: $selection)
@@ -301,6 +303,7 @@ private struct NewGradeRow: View {
 struct TodayScheduleSection: View {
     @Binding var selection: AppTab
     @Environment(AppModel.self) private var model
+    @Environment(StudyTaskStore.self) private var tasks
 
     private var today: Weekday? { Weekday.today() }
 
@@ -330,7 +333,11 @@ struct TodayScheduleSection: View {
                                     spot: spot,
                                     periods: page.timetable.periods,
                                     preferredGroup: model.profile.value?.primaryGroup,
-                                    isCurrent: isCurrent(spot, periods: page.timetable.periods)
+                                    isCurrent: isCurrent(spot, periods: page.timetable.periods),
+                                    tasks: tasks.tasks(
+                                        on: Date.startOfSchoolDay(),
+                                        periodRange: spot.periodRange
+                                    )
                                 )
                             }
                         }
@@ -370,6 +377,7 @@ struct CompactLessonRow: View {
     let periods: [LessonPeriod]
     var preferredGroup: String?
     var isCurrent: Bool = false
+    var tasks: [StudyTask] = []
 
     private var lesson: Lesson? { spot.lesson(preferringGroup: preferredGroup) }
 
@@ -413,6 +421,8 @@ struct CompactLessonRow: View {
             }
 
             Spacer(minLength: 0)
+
+            LessonTaskIndicator(tasks: tasks)
 
             if spot.isSplit {
                 Image(systemName: "person.2")
@@ -549,6 +559,95 @@ private struct RecentGradeRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .contentShape(.rect)
+    }
+}
+
+// MARK: - Úkoly a testy
+
+/// Co je potřeba udělat teď a jaký test se blíží.
+/// Ukazuje se jen když je co ukázat — prázdná sekce by jen zabírala místo.
+struct TasksSummarySection: View {
+    @Binding var selection: AppTab
+    @Environment(StudyTaskStore.self) private var tasks
+
+    private var urgent: [StudyTask] {
+        Array((tasks.overdue + tasks.dueToday).prefix(4))
+    }
+
+    private var nextTest: StudyTask? {
+        tasks.upcomingTests.first { $0.daysUntilDue() > 0 }
+    }
+
+    var body: some View {
+        if !urgent.isEmpty || nextTest != nil {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Úkoly", subtitle: subtitle) {
+                    Button("Vše") { selection = .tasks }
+                        .font(.subheadline)
+                }
+
+                if let nextTest {
+                    NextTestCard(task: nextTest)
+                }
+
+                if !urgent.isEmpty {
+                    ContentCard {
+                        VStack(spacing: 0) {
+                            ForEach(Array(urgent.enumerated()), id: \.element.id) { index, task in
+                                if index > 0 { Divider().padding(.leading, 62) }
+                                TaskRow(task: task) {
+                                    withAnimation(.smooth) { tasks.toggleDone(task) }
+                                    Haptics.impact(.soft)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var subtitle: String? {
+        let overdue = tasks.overdue.count
+        guard overdue > 0 else { return nil }
+        return overdue == 1 ? "1 po termínu" : "\(overdue) po termínu"
+    }
+}
+
+/// Nejbližší test dostane vlastní kartu — je to jediná věc, kterou se nevyplatí prošvihnout.
+struct NextTestCard: View {
+    let task: StudyTask
+
+    private var days: Int { task.daysUntilDue() }
+
+    var body: some View {
+        GlassCard(tint: .orange) {
+            HStack(spacing: 14) {
+                VStack(spacing: 1) {
+                    Text("\(days)")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                    Text(days == 1 ? "den" : (days < 5 ? "dny" : "dnů"))
+                        .font(.caption2)
+                }
+                .foregroundStyle(.orange)
+                .frame(width: 56)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(task.subjectName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    Text(task.title)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(2)
+                    Text(DateFormatter.jecnaWeekdayLong.string(from: task.dueDate).capitalizedFirst)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
     }
 }
 

@@ -1,13 +1,19 @@
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(StudyTaskStore.self) private var tasks
     @State private var showsSignOutConfirmation = false
+    @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var pendingReminders = 0
 
     var body: some View {
         @Bindable var settings = model.settings
 
         Form {
+            taskNotificationsSection
+
             Section {
                 Toggle("Nové známky", isOn: $settings.notifyOnNewGrade)
                 Toggle("Poznámky a pochvaly", isOn: $settings.notifyOnNewNotification)
@@ -22,8 +28,13 @@ struct SettingsView: View {
             Section {
                 Toggle("Obnovovat na pozadí", isOn: $settings.backgroundRefreshEnabled)
                 Toggle("Neupozorňovat v noci", isOn: $settings.quietHoursEnabled)
+                    .onChange(of: settings.quietHoursEnabled) { _, newValue in
+                        // Změna se musí propsat do už naplánovaných upozornění.
+                        tasks.setQuietHours(newValue)
+                        Task { pendingReminders = await tasks.pendingNotificationCount() }
+                    }
             } footer: {
-                Text("V nočních hodinách se upozornění odloží na ráno.")
+                Text("Upozornění, které by přišlo mezi 21:00 a 7:00, se odloží na ráno.")
             }
 
             Section("Známky") {
@@ -73,6 +84,10 @@ struct SettingsView: View {
         }
         .navigationTitle("Nastavení")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            authorizationStatus = await tasks.notificationAuthorizationStatus()
+            pendingReminders = await tasks.pendingNotificationCount()
+        }
         .confirmationDialog(
             "Opravdu se chceš odhlásit?",
             isPresented: $showsSignOutConfirmation,
@@ -84,6 +99,51 @@ struct SettingsView: View {
             Button("Zrušit", role: .cancel) {}
         } message: {
             Text("Stažená data se z telefonu smažou.")
+        }
+    }
+}
+
+extension SettingsView {
+
+    /// Stav systémového oprávnění a přehled naplánovaných upozornění na úkoly.
+    /// Úkoly jsou lokální, takže se tady dá spolehlivě ukázat i počet.
+    @ViewBuilder
+    fileprivate var taskNotificationsSection: some View {
+        Section {
+            switch authorizationStatus {
+            case .notDetermined:
+                Button("Povolit upozornění na úkoly") {
+                    Task {
+                        await tasks.requestNotificationAuthorization()
+                        authorizationStatus = await tasks.notificationAuthorizationStatus()
+                        pendingReminders = await tasks.pendingNotificationCount()
+                    }
+                }
+            case .denied:
+                LabeledContent("Upozornění") {
+                    Text("Zakázáno").foregroundStyle(.red)
+                }
+                Button("Otevřít nastavení systému") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            default:
+                LabeledContent("Upozornění") {
+                    Text("Povoleno").foregroundStyle(.green)
+                }
+                LabeledContent("Naplánováno", value: "\(pendingReminders)")
+            }
+
+            if let error = tasks.lastError {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Úkoly a testy")
+        } footer: {
+            Text("Termíny úkolů a testů si vedeš sám, škola je nikde nezveřejňuje. Data zůstávají na tomhle zařízení.")
         }
     }
 }

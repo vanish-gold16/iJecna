@@ -33,6 +33,16 @@ enum Theme {
         return gradeColor(for: lower).mix(with: gradeColor(for: upper), by: clamped - Double(lower))
     }
 
+    /// Barva podle druhu vlastního záznamu.
+    static func taskColor(for kind: StudyTaskKind) -> Color {
+        switch kind {
+        case .homework: accent
+        case .test: .orange
+        case .project: .purple
+        case .note: .gray
+        }
+    }
+
     // MARK: - Tvary
 
     static let cardRadius: CGFloat = 22

@@ -80,4 +80,64 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(record.waitForExistence(timeout: 5), "Poznámky se nenačetly")
         capture("24-poznamky")
     }
+
+    /// Projde založení úkolu od tlačítka plus po zápis do seznamu.
+    func testCreateTask() throws {
+        let app = launchApp(tab: "tasks")
+
+        let addButton = app.buttons["Nový úkol"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 10), "Chybí tlačítko pro přidání")
+        addButton.tap()
+
+        let titleField = app.textFields["Co je potřeba udělat"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 5), "Editor se neotevřel")
+        titleField.tap()
+        titleField.typeText("Referát o Ohmově zákonu")
+
+        // Předmět se vybírá z rozvrhu a známek.
+        app.buttons["Vybrat"].tap()
+        let subject = app.buttons["Fyzika"]
+        XCTAssertTrue(subject.waitForExistence(timeout: 5), "Nabídka předmětů je prázdná")
+        subject.tap()
+
+        capture("40-editor-ukolu")
+
+        app.buttons["Uložit"].tap()
+
+        let saved = app.staticTexts["Referát o Ohmově zákonu"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "Úkol se neuložil do seznamu")
+        capture("41-ukol-ulozen")
+    }
+
+    /// Ověří cestu „klepnu na hodinu v rozvrhu → přidám k ní test“.
+    func testAddTaskFromLesson() throws {
+        let app = launchApp(tab: "timetable")
+
+        // Vybereme konkrétní den, ať test nezávisí na tom, kdy se pouští.
+        let wednesday = app.buttons["St"]
+        XCTAssertTrue(wednesday.waitForExistence(timeout: 10), "Rozvrh se nenačetl")
+        wednesday.tap()
+
+        // Středa = 4, první hodina = ZEL.
+        let lesson = app.buttons["lesson-4-1"]
+        XCTAssertTrue(lesson.waitForExistence(timeout: 5), "Karta hodiny nenalezena")
+        lesson.tap()
+
+        let addTest = app.buttons["Přidat test"]
+        XCTAssertTrue(addTest.waitForExistence(timeout: 5), "Detail hodiny se neotevřel")
+        capture("42-detail-hodiny")
+        addTest.tap()
+
+        let titleField = app.textFields["Co je potřeba udělat"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 5), "Editor se neotevřel")
+        titleField.tap()
+        titleField.typeText("Písemka — Kirchhoffovy zákony")
+
+        capture("43-test-z-rozvrhu")
+        app.buttons["Uložit"].tap()
+
+        let saved = app.staticTexts["Písemka — Kirchhoffovy zákony"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "Test se nepřipojil k hodině")
+        capture("44-hodina-s-testem")
+    }
 }

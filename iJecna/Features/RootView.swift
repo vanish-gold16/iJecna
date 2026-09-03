@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case today, grades, timetable, more
+    case today, grades, timetable, tasks, more
 
     /// Umožňuje spustit aplikaci rovnou na dané záložce:
     /// `SIMCTL_CHILD_INITIAL_TAB=grades xcrun simctl launch booted …`
@@ -10,6 +10,7 @@ enum AppTab: Hashable {
         switch ProcessInfo.processInfo.environment["INITIAL_TAB"] {
         case "grades": .grades
         case "timetable": .timetable
+        case "tasks": .tasks
         case "more": .more
         default: .today
         }
@@ -35,6 +36,7 @@ struct RootView: View {
 
 struct MainTabView: View {
     @Environment(AppModel.self) private var model
+    @Environment(StudyTaskStore.self) private var tasks
     @State private var selection: AppTab = .launchDefault
 
     var body: some View {
@@ -53,6 +55,11 @@ struct MainTabView: View {
             Tab("Rozvrh", systemImage: "calendar", value: AppTab.timetable) {
                 TimetableView()
             }
+
+            Tab("Úkoly", systemImage: "checklist", value: AppTab.tasks) {
+                TasksView()
+            }
+            .badge(tasks.badgeCount)
 
             Tab("Více", systemImage: "square.grid.2x2", value: AppTab.more) {
                 MoreView()

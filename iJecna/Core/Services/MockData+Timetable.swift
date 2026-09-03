@@ -69,12 +69,13 @@ extension MockData {
                 spot(5, lesson("Číslicová technika", "CIT", teacher: "Pro", room: "408")),
                 spot(6, lesson("Ekonomika", "EKO", teacher: "Ves", room: "301")),
             ]),
+            // Ve středu je mezi 4. a 6. hodinou okno — stav „volná hodina“ tak jde vyzkoušet.
             TimetableDay(weekday: .wednesday, spots: [
                 spot(1, lesson("Základy elektrotechniky", "ZEL", teacher: "Nov", room: "410")),
                 spot(2, lesson("Číslicová technika", "CIT", teacher: "Pro", room: "408")),
                 spot(3, lesson("Programové vybavení", "PVY", teacher: "Dvo", room: "306")),
                 spot(4, lesson("Matematika", "MAT", teacher: "Hor", room: "306")),
-                spot(5, lesson("Český jazyk a literatura", "CJL", teacher: "Cer", room: "306")),
+                spot(6, lesson("Český jazyk a literatura", "CJL", teacher: "Cer", room: "306")),
             ]),
             TimetableDay(weekday: .thursday, spots: [
                 spot(1, span: 3,

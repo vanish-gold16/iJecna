@@ -156,6 +156,29 @@ enum Weekday: Int, CaseIterable, Identifiable, Codable, Sendable {
     var next: Weekday {
         Weekday(rawValue: rawValue + 1) ?? .monday
     }
+
+    /// Nejbližší datum, kdy tenhle den nastane — dnešek se počítá.
+    ///
+    /// Rozvrh je týdenní šablona bez konkrétních dat, ale úkoly se váží na datum.
+    /// Když si ve čtvrtek otevřu středeční hodinu, myslím tím středu příští,
+    /// ne tu včerejší — proto se dny, které už tenhle týden proběhly, posunou o týden.
+    func nextOccurrence(from now: Date = .now, calendar: Calendar = .prague) -> Date {
+        let today = Date.startOfSchoolDay(now, calendar: calendar)
+
+        // `Calendar.prague` má firstWeekday = 2, týden tedy začíná pondělím.
+        guard let startOfWeek = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
+            return today
+        }
+
+        let offset = rawValue - Weekday.monday.rawValue
+        guard let thisWeek = calendar.date(byAdding: .day, value: offset, to: startOfWeek) else {
+            return today
+        }
+
+        let candidate = Date.startOfSchoolDay(thisWeek, calendar: calendar)
+        guard candidate < today else { return candidate }
+        return calendar.date(byAdding: .day, value: 7, to: candidate) ?? candidate
+    }
 }
 
 struct TimetableDay: Identifiable, Hashable, Codable, Sendable {
@@ -307,10 +330,18 @@ extension Timetable {
 
             // Přestávka uvnitř bloku: blok už začal, jen běží pauza mezi hodinami.
             let isIntermission = first.from < now
-            // Volná hodina: existuje hodina, která už skončila, a mezi ní a další výukou je mezera.
-            let isFreePeriod = !isIntermission && periods.contains {
-                $0.to < now && day.spot(atPeriod: $0.number)?.isEmpty == false
-            } && candidate.number > (periods.first { $0.contains(now) }?.number ?? -1) + 1
+
+            // Volná hodina (okno) není totéž co přestávka: musí mezi poslední
+            // odučenou a nejbližší hodinou zůstat prázdný slot v rozvrhu.
+            let previousOccupied = periods
+                .filter { $0.to <= now && day.spot(atPeriod: $0.number)?.isEmpty == false }
+                .max { $0.number < $1.number }
+
+            let isFreePeriod = !isIntermission && {
+                guard let previousOccupied else { return false }
+                return ((previousOccupied.number + 1)..<candidate.number)
+                    .contains { day.spot(atPeriod: $0)?.isEmpty != false }
+            }()
 
             let kind: LessonMoment.Kind = if isIntermission {
                 .intermission(inMinutes: minutes)

@@ -152,6 +152,15 @@ struct DayScheduleList: View {
     var preferredGroup: String?
     var isToday: Bool
 
+    @Environment(StudyTaskStore.self) private var tasks
+    @State private var newTask: NewTaskContext?
+    @State private var detailSpot: LessonSpot?
+
+    /// Datum, ke kterému se úkoly z tohohle dne přiřadí.
+    private var date: Date {
+        day?.weekday.nextOccurrence() ?? Date.startOfSchoolDay()
+    }
+
     var body: some View {
         ScrollView {
             if let day, !day.isEmpty {
@@ -161,12 +170,25 @@ struct DayScheduleList: View {
                             spot: spot,
                             periods: periods,
                             preferredGroup: preferredGroup,
-                            isCurrent: isToday && isOngoing(spot)
+                            isCurrent: isToday && isOngoing(spot),
+                            tasks: tasks.tasks(on: date, periodRange: spot.periodRange),
+                            onTap: { detailSpot = spot },
+                            onAddTask: { kind in
+                                newTask = NewTaskContext(
+                                    lesson: spot.lesson(preferringGroup: preferredGroup),
+                                    periodNumber: spot.periodRange.lowerBound,
+                                    date: date,
+                                    kind: kind
+                                )
+                            }
                         )
+                        // Stránkovací TabView drží v hierarchii všech pět dnů naráz,
+                        // takže hledání podle názvu předmětu není jednoznačné.
+                        .accessibilityIdentifier("lesson-\(day.weekday.rawValue)-\(spot.periodRange.lowerBound)")
                     }
                 }
                 .padding(.horizontal, 18)
-                .padding(.bottom, 28)
+                .padding(.bottom, 44)
             } else {
                 EmptyStateView(
                     symbol: "moon.zzz",
@@ -177,10 +199,35 @@ struct DayScheduleList: View {
             }
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
+        .sheet(item: $detailSpot) { spot in
+            LessonDetailSheet(
+                spot: spot,
+                periods: periods,
+                date: date,
+                preferredGroup: preferredGroup
+            )
+        }
+        .sheet(item: $newTask) { context in
+            TaskEditorView(
+                newTaskFor: context.lesson,
+                periodNumber: context.periodNumber,
+                date: context.date,
+                kind: context.kind
+            )
+        }
     }
 
     private func isOngoing(_ spot: LessonSpot) -> Bool {
         spot.isOngoing(at: .now(), periods: periods)
+    }
+
+    /// Popis nově zakládaného záznamu, předvyplněný z hodiny v rozvrhu.
+    struct NewTaskContext: Identifiable {
+        let id = UUID()
+        let lesson: Lesson?
+        let periodNumber: Int?
+        let date: Date
+        let kind: StudyTaskKind
     }
 }
 
@@ -190,6 +237,9 @@ struct LessonCard: View {
     let periods: [LessonPeriod]
     var preferredGroup: String?
     var isCurrent: Bool
+    var tasks: [StudyTask] = []
+    var onTap: (() -> Void)?
+    var onAddTask: ((StudyTaskKind) -> Void)?
 
     private var startPeriod: LessonPeriod? {
         periods.first { $0.number == spot.periodRange.lowerBound }
@@ -199,12 +249,49 @@ struct LessonCard: View {
     }
 
     var body: some View {
+        Button {
+            onTap?()
+        } label: {
+            cardContent
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if let onAddTask {
+                Button {
+                    onAddTask(.homework)
+                } label: {
+                    Label("Přidat úkol", systemImage: "pencil.and.list.clipboard")
+                }
+                Button {
+                    onAddTask(.test)
+                } label: {
+                    Label("Přidat test", systemImage: "exclamationmark.triangle")
+                }
+                Button {
+                    onAddTask(.project)
+                } label: {
+                    Label("Přidat projekt", systemImage: "hammer")
+                }
+            }
+        }
+    }
+
+    private var cardContent: some View {
         HStack(alignment: .top, spacing: 12) {
             timeColumn
 
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(orderedLessons) { lesson in
                     lessonBlock(lesson, isPrimary: lesson.id == orderedLessons.first?.id)
+                }
+
+                if !tasks.isEmpty {
+                    Divider()
+                    VStack(spacing: 8) {
+                        ForEach(tasks) { task in
+                            taskLine(task)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -224,6 +311,35 @@ struct LessonCard: View {
             }
         }
         .clipShape(Theme.cardShape)
+        .contentShape(.rect)
+    }
+
+    /// Úkol navázaný na tuhle hodinu. Jen informace — odškrtává se v detailu hodiny,
+    /// aby karta zůstala jedním klepnutelným celkem.
+    private func taskLine(_ task: StudyTask) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                .font(.callout)
+                .foregroundStyle(task.isDone ? Theme.taskColor(for: task.kind) : .secondary)
+
+            Image(systemName: task.kind.symbolName)
+                .font(.caption2)
+                .foregroundStyle(Theme.taskColor(for: task.kind))
+
+            Text(task.title)
+                .font(.caption)
+                .strikethrough(task.isDone, color: .secondary)
+                .foregroundStyle(task.isDone ? .secondary : .primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            if task.hasPendingReminder {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 
     /// Vlastní skupina studenta jde vždycky první.
@@ -238,6 +354,8 @@ struct LessonCard: View {
                 .font(.headline.weight(.bold))
                 .monospacedDigit()
                 .foregroundStyle(isCurrent ? Theme.accent : .primary)
+
+            LessonTaskIndicator(tasks: tasks)
 
             if let startPeriod, let endPeriod {
                 Text(startPeriod.from.formatted)
