@@ -30,7 +30,9 @@ struct ArticleAttachment: Identifiable, Hashable, Codable, Sendable {
 }
 
 struct Article: Identifiable, Hashable, Codable, Sendable {
-    let id: UUID
+    /// Id článku z adresy `/akce/{id}`. Je stabilní napříč načteními,
+    /// takže se podle něj dá poznat, co je nové.
+    let id: Int
     let title: String
     /// Prostý text — pro náhled a pro vyhledávání.
     let content: String
@@ -41,7 +43,7 @@ struct Article: Identifiable, Hashable, Codable, Sendable {
     let attachments: [ArticleAttachment]
 
     init(
-        id: UUID = UUID(),
+        id: Int,
         title: String,
         content: String,
         date: Date,
@@ -196,6 +198,8 @@ struct SchoolNotification: Identifiable, Hashable, Codable, Sendable {
     let message: String
     let date: Date
     let issuedBy: TeacherRef?
+    /// Číslo jednací, které web uvádí u úředních sdělení („č.j. SPSE/00179/2025“).
+    var caseNumber: String? = nil
 }
 
 // MARK: - Dokumenty

@@ -94,6 +94,9 @@ struct Subject: Identifiable, Hashable, Codable, Sendable {
     let name: DisplayName
     let parts: [SubjectPart]
     let finalGrade: FinalGrade?
+    /// Doplněk u výsledné známky, např. „Napomenutí za neklasifikace“.
+    /// Web ho přidává do popisku za slovní hodnocení.
+    var finalGradeNote: String? = nil
 
     var id: String { name.full }
     var allGrades: [Grade] { parts.flatMap(\.grades) }
@@ -116,6 +119,9 @@ struct Subject: Identifiable, Hashable, Codable, Sendable {
 struct Behaviour: Hashable, Codable, Sendable {
     let finalGrade: FinalGrade?
     let notificationIds: [Int]
+
+    /// Tímhle názvem web označuje řádek chování v tabulce známek.
+    static let subjectName = "Chování"
 }
 
 /// Celá stránka `/score/student`.

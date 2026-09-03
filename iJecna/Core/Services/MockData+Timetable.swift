@@ -137,6 +137,7 @@ extension MockData {
     static var news: [Article] {
         [
             Article(
+                id: 3282,
                 title: "Ředitelské volno 30. října",
                 content: "Ředitel školy vyhlašuje na pátek 30. října ředitelské volno. Výuka odpadá pro všechny ročníky, budova školy bude uzavřena. Obědy jsou automaticky odhlášeny.",
                 date: daysAgo(1),
@@ -144,6 +145,7 @@ extension MockData {
                 schoolOnly: false
             ),
             Article(
+                id: 3278,
                 title: "Přihlášky na maturitní ples",
                 content: "Do konce měsíce se můžete přihlásit na maturitní ples čtvrtých ročníků. Vstupenky jsou k dispozici u třídních učitelů, kapacita sálu je omezená.",
                 date: daysAgo(3),
@@ -154,6 +156,7 @@ extension MockData {
                 ]
             ),
             Article(
+                id: 3275,
                 title: "Exkurze do ČEZ — Temelín",
                 content: "Pro třetí ročníky pořádáme exkurzi do jaderné elektrárny Temelín. Odjezd v 7:00 od školy, návrat kolem 18:00. Nezapomeňte občanský průkaz.",
                 date: daysAgo(6),
@@ -165,12 +168,14 @@ extension MockData {
                 ]
             ),
             Article(
+                id: 3260,
                 title: "Sběr starých mobilů pokračuje",
                 content: "Ve vestibulu školy je umístěn sběrný box na vysloužilou elektroniku. Zapojujeme se do projektu recyklace, výtěžek putuje na školní fond.",
                 date: daysAgo(12),
                 author: "Mgr. Josef Kučera"
             ),
             Article(
+                id: 3201,
                 title: "Zahájení školního roku 2025/2026",
                 content: "Školní rok začíná v pondělí 1. září. První ročníky se sejdou v 8:00 před hlavním vchodem, ostatní ročníky ve svých kmenových učebnách.",
                 date: date(1, 9, 2025),
