@@ -63,32 +63,71 @@ struct ProfileView: View {
     }
 
     private func basics(_ student: Student) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let fields = displayFields(for: student)
+
+        return VStack(alignment: .leading, spacing: 10) {
             SectionHeader("Údaje")
             ContentCard {
                 VStack(spacing: 0) {
-                    InfoRow(label: "Uživatelské jméno", value: student.username, symbol: "person")
-                    Divider().padding(.leading, 52)
-                    InfoRow(label: "Školní e-mail", value: student.schoolMail, symbol: "envelope", link: .mail(student.schoolMail))
-                    if let groups = student.classGroups {
-                        Divider().padding(.leading, 52)
-                        InfoRow(label: "Skupiny", value: groups, symbol: "person.2")
-                    }
-                    if let birthDate = student.birthDate {
-                        Divider().padding(.leading, 52)
+                    ForEach(Array(fields.enumerated()), id: \.element.id) { index, field in
+                        if index > 0 { Divider().padding(.leading, 52) }
                         InfoRow(
-                            label: "Datum narození",
-                            value: DateFormatter.jecnaShortDate.string(from: birthDate),
-                            symbol: "birthday.cake"
+                            label: field.label,
+                            value: field.value,
+                            symbol: field.symbolName,
+                            link: link(for: field)
                         )
-                    }
-                    if let address = student.permanentAddress {
-                        Divider().padding(.leading, 52)
-                        InfoRow(label: "Trvalé bydliště", value: address, symbol: "house")
                     }
                 }
             }
         }
+    }
+
+    /// Přednostně se vypisuje celá tabulka tak, jak ji web uvádí — jinak by
+    /// se ztratilo všechno, co jsme nepojmenovali dopředu. Když tabulka chybí
+    /// (třeba na maketě), poskládá se seznam z toho, co o studentovi víme.
+    private func displayFields(for student: Student) -> [ProfileField] {
+        guard student.details.isEmpty else { return student.details }
+
+        var fields: [ProfileField] = [
+            ProfileField(label: "Uživatelské jméno", value: student.username)
+        ]
+        if !student.schoolMail.isEmpty {
+            fields.append(ProfileField(label: "E-mail", value: student.schoolMail, link: "mailto:\(student.schoolMail)"))
+        }
+        if let className = student.className {
+            fields.append(ProfileField(label: "Třída", value: className))
+        }
+        if let groups = student.classGroups {
+            fields.append(ProfileField(label: "Skupiny", value: groups))
+        }
+        if let birthDate = student.birthDate {
+            fields.append(ProfileField(
+                label: "Datum narození",
+                value: DateFormatter.jecnaShortDate.string(from: birthDate)
+            ))
+        }
+        if let address = student.permanentAddress {
+            fields.append(ProfileField(label: "Trvalé bydliště", value: address))
+        }
+        return fields
+    }
+
+    private func link(for field: ProfileField) -> InfoRow.Link? {
+        if let link = field.link, link.hasPrefix("mailto:") {
+            return .mail(String(link.dropFirst("mailto:".count)))
+        }
+        if let link = field.link, link.hasPrefix("tel:") {
+            return .phone(String(link.dropFirst("tel:".count)))
+        }
+        // Web u telefonu odkaz neuvádí, poznáme ho podle popisku.
+        if field.label.localizedCaseInsensitiveContains("telefon") {
+            return .phone(field.value)
+        }
+        if field.value.contains("@"), field.value.contains(".") {
+            return .mail(field.value)
+        }
+        return nil
     }
 
     private func guardians(_ student: Student) -> some View {

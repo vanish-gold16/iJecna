@@ -101,6 +101,8 @@ struct Teacher: Identifiable, Hashable, Codable, Sendable {
     /// Třídní učitel které třídy.
     let tutorOfClass: String?
     let consultationHours: String?
+    /// Celá tabulka profilu tak, jak ji web uvádí.
+    var details: [ProfileField] = []
 
     var id: String { tag }
 
@@ -139,6 +141,33 @@ struct Guardian: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+/// Jeden řádek z tabulky profilu — popisek a hodnota tak, jak je uvádí web.
+struct ProfileField: Identifiable, Hashable, Codable, Sendable {
+    let label: String
+    let value: String
+    /// Cíl odkazu, když je hodnota odkazem (e-mail, učebna).
+    var link: String? = nil
+
+    var id: String { label }
+
+    /// Ikona odvozená z popisku, aby seznam nebyl jen sloupec textu.
+    var symbolName: String {
+        let key = label.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+        return switch true {
+        case key.contains("mail"): "envelope"
+        case key.contains("telefon"): "phone"
+        case key.contains("trida"), key.contains("skupin"): "person.2"
+        case key.contains("naroz"): "birthday.cake"
+        case key.contains("bydlis"), key.contains("adres"): "house"
+        case key.contains("jmeno"): "person"
+        case key.contains("kabinet"), key.contains("ucebn"): "door.left.hand.closed"
+        case key.contains("hodin"): "clock"
+        case key.contains("zastup"), key.contains("rodic"): "figure.2.and.child.holdinghands"
+        default: "info.circle"
+        }
+    }
+}
+
 struct Student: Hashable, Codable, Sendable {
     let fullName: String
     let username: String
@@ -150,6 +179,9 @@ struct Student: Hashable, Codable, Sendable {
     let permanentAddress: String?
     let guardians: [Guardian]
     let profilePicturePath: String?
+    /// Celá tabulka profilu tak, jak ji web uvádí. Obrazovka ji vypíše i tehdy,
+    /// když jsme konkrétní položku nepojmenovali dopředu.
+    var details: [ProfileField] = []
 
     var initials: String {
         fullName.split(separator: " ").prefix(2)

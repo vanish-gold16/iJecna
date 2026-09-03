@@ -27,7 +27,8 @@ enum TeacherParser {
             phoneNumbers: [profile.value("Telefon")].compactMap { $0 },
             cabinet: profile.value("Kabinet"),
             tutorOfClass: profile.value("Třídní učitel", "Třídnictví", "Třída"),
-            consultationHours: profile.value("Konzultační hodiny")
+            consultationHours: profile.value("Konzultační hodiny"),
+            details: profile.rows
         )
     }
 }

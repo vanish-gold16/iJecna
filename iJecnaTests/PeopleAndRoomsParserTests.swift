@@ -104,3 +104,35 @@ final class PeopleAndRoomsParserTests: XCTestCase {
         XCTAssertNil(try LockerPageParser.parse(html))
     }
 }
+
+/// Tabulka profilu se čte celá, ne jen položky, které umíme pojmenovat.
+extension PeopleAndRoomsParserTests {
+
+    func testKeepsEveryProfileRow() throws {
+        let teacher = try TeacherParser.parse(Fixture.teacherDetail.html(), tag: "BU")
+
+        // Sedm řádků, které stránka opravdu má.
+        XCTAssertEqual(teacher.details.count, 7)
+        XCTAssertEqual(
+            teacher.details.map(\.label),
+            ["Jméno", "Zkratka", "Uživatelské jméno", "E-mail", "Telefon", "Kabinet", "Konzultační hodiny"]
+        )
+    }
+
+    func testProfileRowKeepsItsLink() throws {
+        let teacher = try TeacherParser.parse(Fixture.teacherDetail.html(), tag: "BU")
+
+        let mail = try XCTUnwrap(teacher.details.first { $0.label == "E-mail" })
+        XCTAssertEqual(mail.link, "mailto:brunova@spsejecna.cz")
+
+        // Kabinet odkazuje na učebnu, ať se z profilu dá skočit dál.
+        let cabinet = try XCTUnwrap(teacher.details.first { $0.label == "Kabinet" })
+        XCTAssertEqual(cabinet.link, "/ucebna/Sborovna")
+    }
+
+    func testProfileRowPicksIconFromLabel() {
+        XCTAssertEqual(ProfileField(label: "E-mail", value: "x").symbolName, "envelope")
+        XCTAssertEqual(ProfileField(label: "Třída", value: "x").symbolName, "person.2")
+        XCTAssertEqual(ProfileField(label: "Neznámý údaj", value: "x").symbolName, "info.circle")
+    }
+}

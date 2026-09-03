@@ -150,25 +150,54 @@ struct TeacherDetailView: View {
         }
     }
 
+    /// Vypisuje celou tabulku profilu tak, jak ji web uvádí. Kdyby škola
+    /// přidala další položku, objeví se sama — nezmizí jen proto, že jsme
+    /// její popisek nepojmenovali dopředu.
     @ViewBuilder
     private func details(_ teacher: Teacher) -> some View {
+        let fields = teacher.details.isEmpty ? fallbackFields(teacher) : teacher.details
+
         ContentCard {
             VStack(spacing: 0) {
-                InfoRow(label: "Školní e-mail", value: teacher.schoolMail, symbol: "envelope", link: .mail(teacher.schoolMail))
-                ForEach(teacher.phoneNumbers, id: \.self) { phone in
-                    Divider().padding(.leading, 52)
-                    InfoRow(label: "Telefon", value: phone, symbol: "phone", link: .phone(phone))
-                }
-                if let cabinet = teacher.cabinet {
-                    Divider().padding(.leading, 52)
-                    InfoRow(label: "Kabinet", value: cabinet, symbol: "door.left.hand.closed")
-                }
-                if let hours = teacher.consultationHours {
-                    Divider().padding(.leading, 52)
-                    InfoRow(label: "Konzultační hodiny", value: hours, symbol: "clock")
+                ForEach(Array(fields.enumerated()), id: \.element.id) { index, field in
+                    if index > 0 { Divider().padding(.leading, 52) }
+                    InfoRow(
+                        label: field.label,
+                        value: field.value,
+                        symbol: field.symbolName,
+                        link: linkFor(field)
+                    )
                 }
             }
         }
+    }
+
+    private func fallbackFields(_ teacher: Teacher) -> [ProfileField] {
+        var fields: [ProfileField] = []
+        if !teacher.schoolMail.isEmpty {
+            fields.append(ProfileField(label: "E-mail", value: teacher.schoolMail))
+        }
+        fields += teacher.phoneNumbers.map { ProfileField(label: "Telefon", value: $0) }
+        if let cabinet = teacher.cabinet {
+            fields.append(ProfileField(label: "Kabinet", value: cabinet))
+        }
+        if let hours = teacher.consultationHours {
+            fields.append(ProfileField(label: "Konzultační hodiny", value: hours))
+        }
+        return fields
+    }
+
+    private func linkFor(_ field: ProfileField) -> InfoRow.Link? {
+        if let link = field.link, link.hasPrefix("mailto:") {
+            return .mail(String(link.dropFirst("mailto:".count)))
+        }
+        if field.label.localizedCaseInsensitiveContains("telefon") {
+            return .phone(field.value)
+        }
+        if field.value.contains("@"), field.value.contains(".") {
+            return .mail(field.value)
+        }
+        return nil
     }
 
     private func load(force: Bool = false) async {

@@ -37,13 +37,16 @@ enum StudentProfileParser {
         return Student(
             fullName: fullName,
             username: profile.value("Uživatelské jméno") ?? identity.username ?? username,
-            schoolMail: profile.value("E-mail", "Email") ?? "",
-            className: profile.value("Třída"),
-            classGroups: profile.value("Skupiny", "Skupina"),
+            // Když tabulka e-mail neuvádí, najdeme ho podle odkazu — na profilu
+            // je školní adresa jediný mailto na stránce.
+            schoolMail: profile.value("E-mail", "Email") ?? schoolMail(in: document) ?? "",
+            className: profile.value("Třída", "Třída/skupina", "Studijní skupina"),
+            classGroups: profile.value("Skupiny", "Skupina", "Dělení", "Zařazení do skupin"),
             birthDate: profile.value("Datum narození").flatMap(JecnaDate.fromNumeric),
             permanentAddress: profile.value("Trvalé bydliště", "Adresa", "Bydliště"),
             guardians: [],
-            profilePicturePath: HTML.first(document, "div.profilephoto img")?.attribute("src")
+            profilePicturePath: HTML.first(document, "div.profilephoto img")?.attribute("src"),
+            details: profile.rows
         )
     }
 

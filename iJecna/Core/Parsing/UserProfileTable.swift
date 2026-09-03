@@ -12,25 +12,51 @@ struct UserProfileTable {
     /// Odkazy v hodnotách, aby šlo z kabinetu vyčíst kód učebny.
     private let links: [String: String]
 
+    /// Všechny řádky v pořadí, v jakém je stránka uvádí.
+    ///
+    /// Vyhledávání podle popisku je křehké: stačí, aby škola pojmenovala
+    /// položku jinak, a údaj zmizí. Proto se vedle toho drží celý obsah
+    /// tabulky — obrazovka pak ukáže i to, co jsme nepojmenovali dopředu.
+    let rows: [ProfileField]
+
     init(_ container: Element) {
         var values: [String: String] = [:]
         var links: [String: String] = [:]
+        var rows: [ProfileField] = []
 
-        for row in HTML.all(container, "table.userprofile tr") {
+        for row in Self.rows(in: container) {
             guard let label = HTML.first(row, "th")?.normalizedText.nilIfEmpty,
-                  let cell = HTML.first(row, "td") else { continue }
+                  let cell = HTML.first(row, "td"),
+                  let value = cell.normalizedText.nilIfEmpty else { continue }
 
             let key = Self.normalizeKey(label)
-            if let value = cell.normalizedText.nilIfEmpty {
-                values[key] = value
-            }
-            if let href = HTML.first(cell, "a")?.attribute("href") {
-                links[key] = href
-            }
+            let href = HTML.first(cell, "a")?.attribute("href")
+
+            values[key] = value
+            if let href { links[key] = href }
+            rows.append(ProfileField(label: label, value: value, link: href))
         }
 
         self.values = values
         self.links = links
+        self.rows = rows
+    }
+
+    /// Řádky tabulky profilu.
+    ///
+    /// Profil učitele má `table.userprofile`, ale šablona se stránku od stránky
+    /// liší, takže se jako záloha vezme kterákoli tabulka dvojic v obsahu.
+    /// Rozvrh a známky se musí vynechat — mají také `th` a `td`, ale popisky
+    /// to nejsou.
+    private static func rows(in container: Element) -> [Element] {
+        let named = HTML.all(container, "table.userprofile")
+        let tables = named.isEmpty
+            ? HTML.all(container, "main table").filter {
+                !$0.hasClass("timetable") && !$0.hasClass("score")
+            }
+            : named
+
+        return tables.flatMap { HTML.all($0, "tr") }
     }
 
     /// Popisky se liší diakritikou i velikostí písmen podle šablony,
