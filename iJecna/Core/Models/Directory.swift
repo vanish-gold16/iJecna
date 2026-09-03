@@ -112,10 +112,13 @@ struct Teacher: Identifiable, Hashable, Codable, Sendable {
 struct Room: Identifiable, Hashable, Codable, Sendable {
     let roomCode: String
     let name: String
+    /// Patro. V seznamu učeben ho web neuvádí, je až na detailu učebny.
     let floor: String?
     /// Kmenová učebna které třídy.
     let homeroomOf: String?
-    let manager: TeacherRef?
+    /// Správce učebny. Seznam uvádí jen jméno, ne zkratku, takže se na
+    /// učitele nedá odkázat — držíme proto text, ne referenci.
+    let manager: String?
 
     var id: String { roomCode }
 }

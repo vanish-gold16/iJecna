@@ -3,32 +3,47 @@ import SwiftSoup
 
 /// Čte stránku `/student/{username}`.
 ///
-/// Jméno a uživatelské jméno se dají vzít z prvků, které má každá přihlášená
-/// stránka: nabídky uživatele a drobečkové navigace. Ostatní údaje profilu
-/// zatím nečteme — nemáme k té stránce uloženou předlohu, podle které by
-/// se dal parser ověřit, a hádat obsah je horší než ho neukázat.
+/// Údaje jsou ve stejné tabulce `table.userprofile`, jakou má profil učitele.
+/// Jméno a uživatelské jméno se navíc dají vzít z prvků, které nese každá
+/// přihlášená stránka — nadpisu a drobečkové navigace.
 enum StudentProfileParser {
 
     private static let page = "Profil studenta"
 
     static func parse(_ html: String, username: String) throws -> Student {
         let document = try HTML.document(html, page: page)
+        let profile = UserProfileTable(document)
         let identity = self.identity(in: document)
 
-        guard let fullName = identity.fullName else {
+        // Pořadí zdrojů není libovolné. Na profilu je jméno v nadpisu, ale na
+        // podstránkách je v nadpisu název stránky — proto se nadpis bere jen
+        // tam, kde je i tabulka profilu. Jinak by se student jmenoval „Skříňka“.
+        let heading = profile.isEmpty
+            ? nil
+            : HTML.first(document, "h1 span.label.label-icon")?.normalizedText.nilIfEmpty
+
+        let rawName = heading
+            ?? HTML.first(document, "h1 span.breadcrumb a")?.normalizedText.nilIfEmpty
+            ?? profile.value("Jméno")
+            // Poslední záchrana pro případ, že by profil neměl ani tabulku,
+            // ani drobečkovou navigaci. Sem se dostane jen stránka profilu,
+            // takže v nadpisu bude jméno.
+            ?? HTML.first(document, "h1 span.label.label-icon")?.normalizedText.nilIfEmpty
+
+        guard let fullName = rawName.map(displayName) else {
             throw HTMLParseError(page: page, detail: "na stránce není jméno studenta")
         }
 
         return Student(
             fullName: fullName,
-            username: identity.username ?? username,
-            schoolMail: schoolMail(in: document) ?? "",
-            className: nil,
-            classGroups: nil,
-            birthDate: nil,
-            permanentAddress: nil,
+            username: profile.value("Uživatelské jméno") ?? identity.username ?? username,
+            schoolMail: profile.value("E-mail", "Email") ?? "",
+            className: profile.value("Třída"),
+            classGroups: profile.value("Skupiny", "Skupina"),
+            birthDate: profile.value("Datum narození").flatMap(JecnaDate.fromNumeric),
+            permanentAddress: profile.value("Trvalé bydliště", "Adresa", "Bydliště"),
             guardians: [],
-            profilePicturePath: nil
+            profilePicturePath: HTML.first(document, "div.profilephoto img")?.attribute("src")
         )
     }
 
@@ -49,8 +64,10 @@ enum StudentProfileParser {
         return (breadcrumb.map { displayName($0.normalizedText) }, username)
     }
 
-    /// Web píše „Příjmení Jméno“; k zobrazení se hodí obvyklé pořadí.
-    private static func displayName(_ raw: String) -> String {
+    /// Web píše jméno studenta příjmením napřed; k zobrazení se pořadí obrací.
+    /// Delší jména (s tituly nebo složeným příjmením) necháváme být — u nich
+    /// se nedá spolehlivě určit, co je co.
+    static func displayName(_ raw: String) -> String {
         let words = raw.normalizedWhitespace.split(separator: " ").map(String.init)
         guard words.count == 2 else { return raw.normalizedWhitespace }
         return "\(words[1]) \(words[0])"

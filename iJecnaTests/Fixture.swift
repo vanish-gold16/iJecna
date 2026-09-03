@@ -13,6 +13,9 @@ enum Fixture: String, CaseIterable {
     case news = "SPŠE Ječná - Novinky.html"
     case teachers = "SPŠE Ječná - Pedagogický sbor.html"
     case notifications = "SPŠE Ječná - Sdělení rodičům.html"
+    case teacherDetail = "SPŠE Ječná - Mgr. Lenka Brůnová.html"
+    case rooms = "SPŠE Ječná - Učebny.html"
+    case locker = "SPŠE Ječná - Skříňka.html"
 
     private static let directory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()

@@ -96,21 +96,19 @@ actor WebJecnaService: JecnaService {
         return try parse { try StudentProfileParser.parse(html, username: username) }
     }
 
-    // MARK: - Zatím nedostupné
-
-    // Tyhle stránky nemáme uložené, takže by k jejich parserům neexistovala
-    // žádná ověřovací předloha. Radši to přiznáme, než abychom obsah hádali.
-
     func teacher(tag: String) async throws -> Teacher {
-        throw JecnaError.notImplemented("Profil učitele")
+        let html = try await client.html(.teacher(tag: tag))
+        return try parse { try TeacherParser.parse(html, tag: tag) }
     }
 
     func rooms() async throws -> [Room] {
-        throw JecnaError.notImplemented("Seznam učeben")
+        let html = try await client.html(.rooms)
+        return try parse { try RoomsPageParser.parse(html) }
     }
 
     func locker() async throws -> Locker? {
-        throw JecnaError.notImplemented("Informace o skříňce")
+        let html = try await client.html(.locker)
+        return try parse { try LockerPageParser.parse(html) }
     }
 
     // MARK: - Pomocné

@@ -253,13 +253,22 @@ struct RoomsView: View {
         .task { await model.loadRooms() }
     }
 
+    /// Seskupí učebny podle patra. Web patro v seznamu neuvádí, takže když
+    /// ho neznáme u žádné učebny, zůstane jeden nepojmenovaný oddíl.
     private func grouped(_ rooms: [Room]) -> [(floor: String, rooms: [Room])] {
         let filtered = query.isEmpty ? rooms : rooms.filter {
-            $0.name.localizedCaseInsensitiveContains(query) || $0.roomCode.localizedCaseInsensitiveContains(query)
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.roomCode.localizedCaseInsensitiveContains(query)
+                || ($0.homeroomOf?.localizedCaseInsensitiveContains(query) ?? false)
+                || ($0.manager?.localizedCaseInsensitiveContains(query) ?? false)
         }
-        let groups = Dictionary(grouping: filtered) { $0.floor ?? "Ostatní" }
-        return groups
-            .map { (floor: $0.key, rooms: $0.value.sorted { $0.roomCode < $1.roomCode }) }
+
+        guard filtered.contains(where: { $0.floor != nil }) else {
+            return filtered.isEmpty ? [] : [(floor: "", rooms: filtered)]
+        }
+
+        return Dictionary(grouping: filtered) { $0.floor ?? "Ostatní" }
+            .map { (floor: $0.key, rooms: $0.value) }
             .sorted { $0.floor.localizedStandardCompare($1.floor) == .orderedAscending }
     }
 
@@ -279,7 +288,9 @@ struct RoomsView: View {
                     VStack(spacing: 18) {
                         ForEach(sections, id: \.floor) { section in
                             VStack(alignment: .leading, spacing: 10) {
-                                SectionHeader(section.floor)
+                                if !section.floor.isEmpty {
+                                    SectionHeader(section.floor)
+                                }
                                 ContentCard {
                                     VStack(spacing: 0) {
                                         ForEach(Array(section.rooms.enumerated()), id: \.element.id) { index, room in
@@ -322,11 +333,12 @@ struct RoomRow: View {
                         Text("kmenová \(homeroom)")
                     }
                     if let manager = room.manager {
-                        Text("• \(manager.tag)")
+                        Text(room.homeroomOf == nil ? manager : "• \(manager)")
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer()

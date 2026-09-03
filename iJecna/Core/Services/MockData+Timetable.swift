@@ -119,17 +119,17 @@ extension MockData {
     // MARK: - Učebny
 
     static let rooms: [Room] = [
-        Room(roomCode: "306", name: "Učebna 306", floor: "3. patro", homeroomOf: "3.C", manager: teacher("Nov")),
-        Room(roomCode: "301", name: "Učebna 301", floor: "3. patro", homeroomOf: "2.A", manager: teacher("Ben")),
-        Room(roomCode: "204", name: "Jazyková učebna 204", floor: "2. patro", homeroomOf: nil, manager: teacher("Svo")),
-        Room(roomCode: "205", name: "Jazyková učebna 205", floor: "2. patro", homeroomOf: nil, manager: teacher("Ryb")),
-        Room(roomCode: "212", name: "Fyzikální posluchárna", floor: "2. patro", homeroomOf: nil, manager: teacher("Kra")),
-        Room(roomCode: "408", name: "Laboratoř číslicové techniky", floor: "4. patro", homeroomOf: nil, manager: teacher("Pro")),
-        Room(roomCode: "410", name: "Elektrotechnická laboratoř", floor: "4. patro", homeroomOf: "4.A", manager: teacher("Nov")),
-        Room(roomCode: "217", name: "Počítačová učebna Lab 217", floor: "2. patro", homeroomOf: nil, manager: teacher("Dvo")),
-        Room(roomCode: "219", name: "Počítačová učebna Lab 219", floor: "2. patro", homeroomOf: nil, manager: teacher("Ves")),
-        Room(roomCode: "004", name: "Dílny — elektro", floor: "Suterén", homeroomOf: nil, manager: teacher("Mar")),
-        Room(roomCode: "TV", name: "Tělocvična", floor: "Přízemí", homeroomOf: nil, manager: teacher("Kuc")),
+        Room(roomCode: "306", name: "Učebna 306", floor: "3. patro", homeroomOf: "3.C", manager: teacher("Nov")?.fullName),
+        Room(roomCode: "301", name: "Učebna 301", floor: "3. patro", homeroomOf: "2.A", manager: teacher("Ben")?.fullName),
+        Room(roomCode: "204", name: "Jazyková učebna 204", floor: "2. patro", homeroomOf: nil, manager: teacher("Svo")?.fullName),
+        Room(roomCode: "205", name: "Jazyková učebna 205", floor: "2. patro", homeroomOf: nil, manager: teacher("Ryb")?.fullName),
+        Room(roomCode: "212", name: "Fyzikální posluchárna", floor: "2. patro", homeroomOf: nil, manager: teacher("Kra")?.fullName),
+        Room(roomCode: "408", name: "Laboratoř číslicové techniky", floor: "4. patro", homeroomOf: nil, manager: teacher("Pro")?.fullName),
+        Room(roomCode: "410", name: "Elektrotechnická laboratoř", floor: "4. patro", homeroomOf: "4.A", manager: teacher("Nov")?.fullName),
+        Room(roomCode: "217", name: "Počítačová učebna Lab 217", floor: "2. patro", homeroomOf: nil, manager: teacher("Dvo")?.fullName),
+        Room(roomCode: "219", name: "Počítačová učebna Lab 219", floor: "2. patro", homeroomOf: nil, manager: teacher("Ves")?.fullName),
+        Room(roomCode: "004", name: "Dílny — elektro", floor: "Suterén", homeroomOf: nil, manager: teacher("Mar")?.fullName),
+        Room(roomCode: "TV", name: "Tělocvična", floor: "Přízemí", homeroomOf: nil, manager: teacher("Kuc")?.fullName),
     ]
 
     // MARK: - Aktuality

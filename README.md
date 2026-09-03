@@ -8,9 +8,7 @@ Známky, rozvrh, školní adresář — a vlastní úkoly a termíny testů, kte
 ## Stav
 
 Aplikace čte **skutečná data** ze `spsejecna.cz`: známky, rozvrh, aktuality,
-učitelský sbor a sdělení rodičům. Profil učitele, seznam učeben a skříňka
-zatím načíst neumí — k těm stránkám nemáme uloženou předlohu, podle které
-by šel parser ověřit, a hádat obsah je horší než ho neukázat.
+učitelský sbor a jeho profily, učebny, skříňku, sdělení rodičům a profil studenta.
 
 Úkoly a termíny testů jsou lokální data na zařízení, se školním webem nesouvisí.
 
@@ -179,7 +177,7 @@ SIMCTL_CHILD_INITIAL_TAB=grades xcrun simctl launch booted mytrofanov.iJecna
 
 - [x] vlastní parser `spsejecna.cz` ve Swiftu (SwiftSoup), Keychain, automatické přihlášení
 - [x] snímkové testy parserů nad uloženým HTML
-- [ ] profil učitele, učebny a skříňka — chybí uložené předlohy stránek
+- [x] profil učitele, učebny a skříňka
 - [ ] `BGAppRefreshTask` a upozornění na nové známky
 - [ ] jídelna, příchody a odchody, absence
 - [ ] katalog řetězců s angličtinou

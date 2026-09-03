@@ -41,3 +41,20 @@ final class StudentProfileParserTests: XCTestCase {
         XCTAssertEqual(student.initials, "IM")
     }
 }
+
+/// Zkoušky pořadí zdrojů jména, kvůli kterému se na profilu ukazovalo špatné jméno.
+extension StudentProfileParserTests {
+
+    func testDoesNotMistakePageTitleForName() throws {
+        // Na podstránkách je v nadpisu název stránky. Bez tabulky profilu
+        // se proto nadpis nesmí použít, jinak by se student jmenoval „Skříňka“.
+        let student = try StudentProfileParser.parse(Fixture.locker.html(), username: "mytrofanov")
+        XCTAssertEqual(student.fullName, "Ivan Mytrofanov")
+    }
+
+    func testKeepsLongNamesInOriginalOrder() {
+        // U tří a více slov se nedá poznat, co je jméno a co příjmení.
+        XCTAssertEqual(StudentProfileParser.displayName("Mgr. Lenka Brůnová"), "Mgr. Lenka Brůnová")
+        XCTAssertEqual(StudentProfileParser.displayName("Novák Jan"), "Jan Novák")
+    }
+}
