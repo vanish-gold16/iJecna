@@ -13,6 +13,9 @@ enum JecnaError: LocalizedError, Equatable, Sendable {
     case parsing(String)
     /// Stránka existuje, ale tenhle student na ni nemá právo (např. výuční listy mimo 4. ročník).
     case notAvailable
+    /// Stránku zatím neumíme přečíst — chybí k ní uložená předloha, podle které
+    /// by se dal parser ověřit. Radši to přiznáme, než abychom hádali obsah.
+    case notImplemented(String)
     case offline
 
     var errorDescription: String? {
@@ -22,6 +25,7 @@ enum JecnaError: LocalizedError, Equatable, Sendable {
         case .network(let detail): "Nepodařilo se spojit se školním webem. \(detail)"
         case .parsing: "Školní web vrátil něco neočekávaného."
         case .notAvailable: "Tahle stránka pro tebe není dostupná."
+        case .notImplemented(let what): "\(what) zatím aplikace neumí načíst."
         case .offline: "Nejsi připojený k internetu."
         }
     }
@@ -33,6 +37,7 @@ enum JecnaError: LocalizedError, Equatable, Sendable {
         case .network, .offline: "Zkus to za chvíli znovu."
         case .parsing: "Nejspíš se změnil školní web. Zkus aktualizovat aplikaci."
         case .notAvailable: nil
+        case .notImplemented: "Připravuje se v další verzi."
         }
     }
 
@@ -42,6 +47,7 @@ enum JecnaError: LocalizedError, Equatable, Sendable {
         case .network, .offline: "wifi.exclamationmark"
         case .parsing: "exclamationmark.triangle"
         case .notAvailable: "lock"
+        case .notImplemented: "hammer"
         }
     }
 }
@@ -53,7 +59,9 @@ enum JecnaError: LocalizedError, Equatable, Sendable {
 protocol JecnaService: Sendable {
     func logIn(username: String, password: String) async throws
     func logOut() async
-    func isLoggedIn() async -> Bool
+    /// Uživatelské jméno přihlášeného studenta, nebo `nil` když relace neběží.
+    /// Vrací jméno, ne jen ano/ne — aplikace ho potřebuje do adresy profilu.
+    func signedInUsername() async -> String?
 
     func grades(year: SchoolYear, half: SchoolYearHalf) async throws -> GradesPage
     func timetable(year: SchoolYear, periodId: Int?) async throws -> TimetablePage

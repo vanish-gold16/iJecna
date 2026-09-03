@@ -19,6 +19,9 @@ final class ScreenshotTests: XCTestCase {
     private func launchApp(tab: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["INITIAL_TAB"] = tab
+        // Zkoušky rozhraní běží na maketě: nesmí chodit na školní web
+        // ani potřebovat něčí heslo.
+        app.launchEnvironment["USE_MOCK"] = "1"
         app.launch()
         return app
     }

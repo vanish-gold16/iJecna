@@ -52,7 +52,7 @@ actor MockJecnaService: JecnaService {
         loggedIn = false
     }
 
-    func isLoggedIn() async -> Bool { loggedIn }
+    func signedInUsername() async -> String? { loggedIn ? Self.demoUsername : nil }
 
     // MARK: - Data
 

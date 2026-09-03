@@ -100,6 +100,27 @@ final class NetworkingTests: XCTestCase {
         XCTAssertNil(JecnaHTTPClient.extractLoginToken(from: "<html><body>nic</body></html>"))
     }
 
+    // MARK: - Označení klienta
+
+    func testUserAgentAvoidsBlockedWord() {
+        // Server školy vrací 403 na každý User-Agent obsahující jméno školy.
+        // Ověřeno proti webu; bez tohohle by aplikace nenačetla vůbec nic.
+        XCTAssertFalse(
+            JecnaHTTPClient.defaultUserAgent.lowercased().contains("jecna"),
+            "User-Agent nesmí obsahovat „jecna“, server takové klienty odmítá"
+        )
+        XCTAssertTrue(
+            JecnaHTTPClient.defaultUserAgent.contains("unofficial"),
+            "Klient se má hlásit pravdivě jako neoficiální"
+        )
+    }
+
+    func testBackgroundPacingMatchesCrawlDelay() {
+        // robots.txt školy uvádí Crawl-delay: 5.
+        XCTAssertEqual(JecnaHTTPClient.Pacing.background.interval, 5)
+        XCTAssertLessThan(JecnaHTTPClient.Pacing.interactive.interval, 1)
+    }
+
     // MARK: - Přihlašovací údaje
 
     func testUsernameNormalisationStripsSchoolDomain() {

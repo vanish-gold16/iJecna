@@ -46,6 +46,7 @@ struct SettingsView: View {
                 Toggle("Počítat „N“ do průměru", isOn: $settings.showNSymbolInAverages)
             }
 
+            if model.isUsingMockData {
             Section {
                 Picker("Simulovaná chyba", selection: $settings.simulatedFailure) {
                     ForEach(MockJecnaService.FailureMode.allCases, id: \.self) { mode in
@@ -73,7 +74,8 @@ struct SettingsView: View {
             } header: {
                 Text("Maketa")
             } footer: {
-                Text("Nástroje pro zkoušení stavů obrazovek. V ostré verzi tato sekce nebude.")
+                Text("Nástroje pro zkoušení stavů obrazovek. Ukazují se jen když aplikace běží na maketě.")
+            }
             }
 
             Section {

@@ -3,8 +3,8 @@ import SwiftUI
 struct LoginView: View {
     @Environment(AppModel.self) private var model
 
-    @State private var username = MockJecnaService.demoUsername
-    @State private var password = MockJecnaService.demoPassword
+    @State private var username = ""
+    @State private var password = ""
     @State private var isPasswordVisible = false
     @FocusState private var focusedField: Field?
 
@@ -33,6 +33,7 @@ struct LoginView: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .onAppear(perform: prefillForMockIfNeeded)
     }
 
     private var header: some View {
@@ -146,10 +147,12 @@ struct LoginView: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
 
-            Text("Maketa — přihlaš se jako \(MockJecnaService.demoUsername) / \(MockJecnaService.demoPassword)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
+            if model.isUsingMockData {
+                Text("Maketa — \(MockJecnaService.demoUsername) / \(MockJecnaService.demoPassword)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 4)
+            }
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, 8)
@@ -159,6 +162,13 @@ struct LoginView: View {
         guard canSubmit else { return }
         focusedField = nil
         Task { await model.signIn(username: username, password: password) }
+    }
+
+    /// Na maketě předvyplníme údaje, ať se nemusí ťukat při každém spuštění.
+    private func prefillForMockIfNeeded() {
+        guard model.isUsingMockData, username.isEmpty else { return }
+        username = MockJecnaService.demoUsername
+        password = MockJecnaService.demoPassword
     }
 }
 

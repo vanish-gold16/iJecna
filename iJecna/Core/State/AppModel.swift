@@ -67,8 +67,25 @@ final class AppModel {
     /// V ostré verzi tohle zmizí, rozdíl bude vycházet ze skutečných dat.
     var simulatesFreshGrades = true
 
+    /// Běžíme na maketě? Ovlivňuje jen ladicí nástroje v nastavení.
+    let isUsingMockData: Bool
+
     init(service: JecnaService) {
         self.service = service
+        self.isUsingMockData = service is MockJecnaService
+        // Předstírat nové známky má smysl jen u makety; u skutečných dat
+        // rozdíl vychází z toho, co student opravdu ještě neviděl.
+        self.simulatesFreshGrades = isUsingMockData
+    }
+
+    /// Obnoví relaci po startu aplikace — heslo je v Klíčence.
+    func restoreSession() async {
+        guard let username = await service.signedInUsername() else {
+            session = .signedOut
+            return
+        }
+        session = .signedIn(username: username)
+        await loadEssentials()
     }
 
     // MARK: - Přihlášení
@@ -78,7 +95,7 @@ final class AppModel {
         signInError = nil
         do {
             try await service.logIn(username: username, password: password)
-            session = .signedIn(username: username)
+            session = .signedIn(username: await service.signedInUsername() ?? username)
             Haptics.notify(.success)
             await loadEssentials()
         } catch let error as JecnaError {

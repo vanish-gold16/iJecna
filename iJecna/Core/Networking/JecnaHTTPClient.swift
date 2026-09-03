@@ -38,6 +38,11 @@ actor JecnaHTTPClient {
     private let baseURL: URL
     private let session: URLSession
     private let userAgent: String
+    /// Úložiště cookies, které relace opravdu používá.
+    ///
+    /// `URLSession.configuration` vrací kopii, takže se na ni nedá spolehnout
+    /// při pozdějších změnách; referenci na úložiště si proto držíme sami.
+    private let cookieStorage: HTTPCookieStorage
 
     /// Údaje pro automatické přihlášení. Drží se jen v paměti;
     /// trvale je uchovává Klíčenka přes `CredentialStore`.
@@ -48,20 +53,47 @@ actor JecnaHTTPClient {
 
     private(set) var role: Role = .student
 
+    /// Rozestup mezi požadavky.
+    ///
+    /// `robots.txt` školy uvádí `Crawl-delay: 5`. Ten je psaný pro roboty, kteří
+    /// procházejí web plošně — my čteme jen stránky přihlášeného studenta a je
+    /// jich za jedno otevření aplikace hrstka. Když ale bude aplikace kontrolovat
+    /// známky sama na pozadí, chová se to už jako robot a rozestup dodržíme celý.
+    enum Pacing: Sendable {
+        /// Uživatel čeká u telefonu; jen tolik, aby nešly požadavky naráz.
+        case interactive
+        /// Automatická kontrola bez uživatele — plný rozestup podle robots.txt.
+        case background
+
+        var interval: TimeInterval {
+            switch self {
+            case .interactive: 0.5
+            case .background: 5
+            }
+        }
+    }
+
+    private var pacing: Pacing = .interactive
+    private var nextAllowedRequest: Date = .distantPast
+
     init(
         baseURL: URL = JecnaEndpoint.officialBase,
-        userAgent: String = "iJecna/0.1 (unofficial student app; +https://github.com/vanish-gold16/iJecna)",
+        userAgent: String = JecnaHTTPClient.defaultUserAgent,
         timeout: TimeInterval = 15
     ) {
         self.baseURL = baseURL
         self.userAgent = userAgent
 
-        // Efemérní konfigurace znamená vlastní úložiště cookies jen v paměti:
+        // Efemérní konfigurace si sama nese úložiště cookies jen v paměti:
         // relace nepřežije restart aplikace (a ani se nemíchá se Safari),
         // po startu se přihlásíme znovu z Klíčenky.
+        //
+        // Vlastní `HTTPCookieStorage()` sem nepatří — takové úložiště relace
+        // nepoužije a cookie s rolí by se na server nikdy nedostala. Server pak
+        // vrací stránku pro zájemce, na které přihlašovací formulář vůbec není.
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieStorage = HTTPCookieStorage()
         configuration.httpCookieAcceptPolicy = .always
+        configuration.httpShouldSetCookies = true
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout * 2
         configuration.httpAdditionalHeaders = [
@@ -71,6 +103,34 @@ actor JecnaHTTPClient {
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
 
         self.session = URLSession(configuration: configuration)
+        self.cookieStorage = configuration.httpCookieStorage ?? .shared
+    }
+
+    /// Vlastní označení klienta.
+    ///
+    /// **Nesmí obsahovat slovo „jecna“.** Server školy odpovídá 403 na každý
+    /// User-Agent, ve kterém se jméno školy objeví — ověřeno proti webu:
+    /// `curl/8.x`, `JAPI` i prohlížeč projdou, `iJecna/0.1` ne.
+    /// Není to plošná obrana proti automatizaci, jen úzké pravidlo na tenhle
+    /// řetězec, takže se klient pořád hlásí pravdivě jako neoficiální studentský.
+    static let defaultUserAgent = "iJ/0.1 (unofficial student client; +https://github.com/vanish-gold16)"
+
+    func setPacing(_ pacing: Pacing) {
+        self.pacing = pacing
+    }
+
+    /// Zamluví si okamžik, kdy smí odejít další požadavek.
+    ///
+    /// Rezervace se zapíše dřív, než se začne čekat — jinak by si souběžné
+    /// požadavky rozebraly tentýž okamžik a rozestup by se neprojevil.
+    private func reserveRequestSlot() async {
+        let now = Date()
+        let slot = max(now, nextAllowedRequest)
+        nextAllowedRequest = slot.addingTimeInterval(pacing.interval)
+
+        let delay = slot.timeIntervalSince(now)
+        guard delay > 0 else { return }
+        try? await Task.sleep(for: .seconds(delay))
     }
 
     // MARK: - Role
@@ -198,10 +258,16 @@ actor JecnaHTTPClient {
     // MARK: - Odesílání
 
     private func send(_ request: URLRequest) async throws -> JecnaResponse {
+        await reserveRequestSlot()
+
         do {
             let (data, response) = try await session.data(for: request, delegate: Self.noRedirects)
             guard let http = response as? HTTPURLResponse else {
                 throw JecnaError.network("odpověď není HTTP")
+            }
+            // 403 na kořenové stránce znamená odmítnutého klienta, ne chybu studenta.
+            if http.statusCode == 403 {
+                throw JecnaError.network("server odmítl klienta (403)")
             }
             return JecnaResponse(
                 statusCode: http.statusCode,
@@ -239,12 +305,16 @@ actor JecnaHTTPClient {
                   .domain: host,
                   .path: "/",
               ]) else { return }
-        session.configuration.httpCookieStorage?.setCookie(cookie)
+        cookieStorage.setCookie(cookie)
     }
 
     private func clearCookies() {
-        guard let storage = session.configuration.httpCookieStorage else { return }
-        storage.cookies?.forEach(storage.deleteCookie)
+        cookieStorage.cookies?.forEach(cookieStorage.deleteCookie)
+    }
+
+    /// Jen pro diagnostiku a zkoušky — co relace skutečně posílá.
+    func cookieValue(named name: String) -> String? {
+        cookieStorage.cookies(for: baseURL)?.first { $0.name == name }?.value
     }
 
     // MARK: - Pomocné

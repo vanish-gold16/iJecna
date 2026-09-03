@@ -7,9 +7,18 @@ Známky, rozvrh, školní adresář — a vlastní úkoly a termíny testů, kte
 
 ## Stav
 
-**Maketa (UX prototyp).** Veškerá školní data pocházejí z `MockJecnaService`;
-skutečný přístup na `spsejecna.cz` zatím není implementován.
-Úkoly a testy naopak fungují doopravdy — jsou to lokální data na zařízení.
+Aplikace čte **skutečná data** ze `spsejecna.cz`: známky, rozvrh, aktuality,
+učitelský sbor a sdělení rodičům. Profil učitele, seznam učeben a skříňka
+zatím načíst neumí — k těm stránkám nemáme uloženou předlohu, podle které
+by šel parser ověřit, a hádat obsah je horší než ho neukázat.
+
+Úkoly a termíny testů jsou lokální data na zařízení, se školním webem nesouvisí.
+
+Maketa zůstává k dispozici pro práci na vzhledu bez připojení:
+
+```sh
+SIMCTL_CHILD_USE_MOCK=1 xcrun simctl launch booted mytrofanov.iJecna
+```
 
 - Cíl: **iOS 26+** (Liquid Glass API bez záložních cest)
 - Jazyk rozhraní: čeština (angličtina přibude přes katalog řetězců)
@@ -37,8 +46,9 @@ iJecna/
 └─ Features/          Dashboard, Grades, Timetable, Tasks, Directory, Profile, Settings, Auth
 ```
 
-Veškerý přístup ke školním datům vede přes protokol `JecnaService`.
-Přechod na skutečný web tedy znamená doplnit jednu implementaci; obrazovky se nemění.
+Veškerý přístup ke školním datům vede přes protokol `JecnaService`. Existují
+dvě implementace — `WebJecnaService` nad skutečným webem a `MockJecnaService`
+pro maketu — a obrazovky mezi nimi nepoznají rozdíl.
 
 ### Úkoly a testy
 
@@ -83,6 +93,34 @@ Stránky (všechny vracejí HTML):
 `schoolYearId = prvníKalendářníRok − 2008`. Pololetí: `21` první, `22` druhé.
 Jídelna je samostatný systém (`strav.nasejidelna.cz`, kód `0341`) s vlastním přihlášením.
 
+### Chování serveru, na které se naráží
+
+**User-Agent nesmí obsahovat „jecna“.** Server odpovídá `403` na každého
+klienta, který má jméno školy v označení — ověřeno proti webu:
+
+| User-Agent | Odpověď |
+|---|---|
+| `curl/8.x` | 200 |
+| `JAPI` | 200 |
+| prohlížeč | 200 |
+| `iJecna/0.1` | **403** |
+| `MyApp/0.1` | 200 |
+
+Není to plošná obrana proti automatizaci, jen úzké pravidlo na ten řetězec.
+Klient se proto hlásí jako `iJ/0.1 (unofficial student client; …)` — pravdivě,
+jen bez jména školy. Hlídá to zkouška `testUserAgentAvoidsBlockedWord`.
+
+**Role musí do cookies dřív než první požadavek.** Bez `WTDGUID=10` server
+vrátí stránku pro zájemce, na které přihlašovací formulář vůbec není, a přihlášení
+skončí na „chybí token3“. Vlastní `HTTPCookieStorage()` se pro to nedá použít —
+relace ho nepoužije a cookie neodejde.
+
+**`robots.txt`** uvádí `Crawl-delay: 5` a zakazuje `/dokumenty`, `/download`,
+`/icon`, `/lib`. Stránky, které čteme, zakázané nejsou. Rozestup mezi požadavky
+je půl sekundy, když u telefonu čeká uživatel, a celých pět sekund pro
+automatickou kontrolu na pozadí, kdy se aplikace chová jako robot. Přílohy
+z `/download` se nikdy nestahují dopředu — jen když na ně někdo klepne.
+
 ### Na co si dát pozor
 
 - **Licence.** JecnaAPI je GPLv3; její přilinkování by nakazilo celou aplikaci.
@@ -119,6 +157,18 @@ xcrun xcresulttool export attachments \
   --path /tmp/shots.xcresult --output-path /tmp/shots
 ```
 
+### Zkoušky proti živému webu
+
+Standardně se přeskakují. Nepotřebují heslo — ověřují jen to, co jde zjistit
+bez účtu: že server našeho klienta pustí, že najdeme CSRF token a že chráněná
+stránka nepřihlášeného odmítne přesně tak, jak klient čeká.
+
+```sh
+TEST_RUNNER_RUN_LIVE_TESTS=1 xcodebuild test -project iJecna.xcodeproj -scheme iJecna \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:iJecnaTests/LiveTransportTests
+```
+
 Aplikaci lze spustit rovnou na konkrétní záložce:
 
 ```sh
@@ -127,8 +177,9 @@ SIMCTL_CHILD_INITIAL_TAB=grades xcrun simctl launch booted mytrofanov.iJecna
 
 ## Další kroky
 
-- [ ] vlastní parser `spsejecna.cz` ve Swiftu (SwiftSoup), Keychain, automatické přihlášení
-- [ ] snímkové testy parserů nad uloženým HTML
+- [x] vlastní parser `spsejecna.cz` ve Swiftu (SwiftSoup), Keychain, automatické přihlášení
+- [x] snímkové testy parserů nad uloženým HTML
+- [ ] profil učitele, učebny a skříňka — chybí uložené předlohy stránek
 - [ ] `BGAppRefreshTask` a upozornění na nové známky
 - [ ] jídelna, příchody a odchody, absence
 - [ ] katalog řetězců s angličtinou

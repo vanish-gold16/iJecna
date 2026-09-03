@@ -3,9 +3,14 @@ import UserNotifications
 
 @main
 struct iJecnaApp: App {
-    /// Maketa startuje rovnou přihlášená, aby šlo klikat po obrazovkách.
-    /// Přihlašovací obrazovka je dostupná přes odhlášení v Nastavení.
-    @State private var model = AppModel(service: MockJecnaService(startLoggedIn: true))
+    /// Aplikace normálně chodí na skutečný školní web. Maketa se dá zapnout
+    /// proměnnou prostředí, když se ladí vzhled bez připojení:
+    /// `SIMCTL_CHILD_USE_MOCK=1 xcrun simctl launch booted mytrofanov.iJecna`
+    @State private var model = AppModel(
+        service: ProcessInfo.processInfo.environment["USE_MOCK"] == "1"
+            ? MockJecnaService(startLoggedIn: true)
+            : WebJecnaService()
+    )
 
     /// Úkoly a testy jsou čistě lokální data — vlastní úložiště nezávislé na školním webu.
     @State private var tasks: StudyTaskStore
@@ -32,10 +37,7 @@ struct iJecnaApp: App {
                 .task {
                     UNUserNotificationCenter.current().delegate = notificationPresenter
 
-                    if await model.service.isLoggedIn() {
-                        model.session = .signedIn(username: MockJecnaService.demoUsername)
-                        await model.loadEssentials()
-                    }
+                    await model.restoreSession()
 
                     tasks.seedIfEmpty()
                     tasks.setQuietHours(model.settings.quietHoursEnabled)
