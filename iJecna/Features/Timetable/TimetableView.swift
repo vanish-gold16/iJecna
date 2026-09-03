@@ -90,7 +90,8 @@ struct TimetableView: View {
                         day: page.timetable.day(weekday),
                         periods: page.timetable.periods,
                         preferredGroup: model.profile.value?.primaryGroup,
-                        isToday: weekday == Weekday.today()
+                        isToday: weekday == Weekday.today(),
+                        substitutions: model.substitutionDay(on: weekday.nextOccurrence())
                     )
                     .tag(weekday)
                 }
@@ -170,6 +171,8 @@ struct DayScheduleList: View {
     let periods: [LessonPeriod]
     var preferredGroup: String?
     var isToday: Bool
+    /// Změny z mimořádného rozvrhu pro tenhle den, pokud nějaké jsou.
+    var substitutions: SubstitutionDay?
 
     @Environment(StudyTaskStore.self) private var tasks
     @State private var newTask: NewTaskContext?
@@ -184,6 +187,11 @@ struct DayScheduleList: View {
         ScrollView {
             if let day, !day.isEmpty {
                 VStack(spacing: 10) {
+                    if let substitutions {
+                        SubstitutionDayBanner(day: substitutions)
+                            .padding(.bottom, 2)
+                    }
+
                     ForEach(day.lessonSpots) { spot in
                         LessonCard(
                             spot: spot,
@@ -191,6 +199,7 @@ struct DayScheduleList: View {
                             preferredGroup: preferredGroup,
                             isCurrent: isToday && isOngoing(spot),
                             tasks: tasks.tasks(on: date, periodRange: spot.periodRange),
+                            substitution: substitutions?.change(forPeriods: spot.periodRange),
                             onTap: { detailSpot = spot },
                             onAddTask: { kind in
                                 newTask = NewTaskContext(
@@ -257,6 +266,7 @@ struct LessonCard: View {
     var preferredGroup: String?
     var isCurrent: Bool
     var tasks: [StudyTask] = []
+    var substitution: SubstitutionChange?
     var onTap: (() -> Void)?
     var onAddTask: ((StudyTaskKind) -> Void)?
 
@@ -304,6 +314,11 @@ struct LessonCard: View {
                     lessonBlock(lesson, isPrimary: lesson.id == orderedLessons.first?.id)
                 }
 
+                if let substitution {
+                    Divider()
+                    SubstitutionBadge(change: substitution)
+                }
+
                 if !tasks.isEmpty {
                     Divider()
                     VStack(spacing: 8) {
@@ -327,6 +342,8 @@ struct LessonCard: View {
         .overlay {
             if isCurrent {
                 Theme.cardShape.strokeBorder(Theme.accent.opacity(0.55), lineWidth: 1.5)
+            } else if substitution != nil {
+                Theme.cardShape.strokeBorder(Color.orange.opacity(0.45), lineWidth: 1.5)
             }
         }
         .clipShape(Theme.cardShape)
@@ -375,6 +392,12 @@ struct LessonCard: View {
                 .foregroundStyle(isCurrent ? Theme.accent : .primary)
 
             LessonTaskIndicator(tasks: tasks)
+
+            if substitution != nil {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.orange)
+            }
 
             if let startPeriod, let endPeriod {
                 Text(startPeriod.from.formatted)

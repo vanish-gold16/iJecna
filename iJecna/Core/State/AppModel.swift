@@ -54,6 +54,9 @@ final class AppModel {
     var profile: LoadState<Student> = .idle
     var locker: LoadState<Locker?> = .idle
     var notifications: LoadState<[SchoolNotification]> = .idle
+    /// Mimořádný rozvrh z cizí služby. Výpadek nesmí shodit řádný rozvrh,
+    /// proto se chyba nikde nevnucuje — jen se změny neukážou.
+    var substitutions: LoadState<SubstitutionSchedule> = .idle
 
     // MARK: - Nastavení
 
@@ -127,6 +130,9 @@ final class AppModel {
         async let timetableTask: Void = loadTimetable()
         async let profileTask: Void = loadProfile()
         _ = await (gradesTask, timetableTask, profileTask)
+
+        // Suplování se ptá až po profilu — potřebuje znát třídu.
+        await loadSubstitutions()
     }
 
     // MARK: - Načítání
@@ -221,11 +227,48 @@ final class AppModel {
         catch { notifications = .failed(.network(error.localizedDescription)) }
     }
 
+    /// Načte mimořádný rozvrh.
+    ///
+    /// Chyba se drží stranou: cizí služba může být kdykoli mimo provoz
+    /// a řádný rozvrh na ní nesmí být závislý.
+    func loadSubstitutions(force: Bool = false) async {
+        guard settings.substitutionsEnabled else {
+            substitutions = .idle
+            return
+        }
+        guard force || substitutions.isIdle else { return }
+
+        // Maketa nesmí chodit na síť.
+        if isUsingMockData {
+            substitutions = .loaded(MockData.substitutionSchedule)
+            return
+        }
+
+        guard let className = profile.value?.className else { return }
+
+        substitutions.markRefreshing()
+        let service = SubstitutionService(provider: settings.substitutionProviderURL)
+        do {
+            substitutions = .loaded(try await service.schedule(for: className))
+        } catch let error as SubstitutionError {
+            substitutions = .failed(.network(error.errorDescription ?? "neznámá chyba"))
+        } catch {
+            substitutions = .failed(.network(error.localizedDescription))
+        }
+    }
+
+    /// Změny pro daný den, pokud je funkce zapnutá a data dorazila.
+    func substitutionDay(on date: Date) -> SubstitutionDay? {
+        guard settings.substitutionsEnabled else { return nil }
+        return substitutions.value?.day(on: date)
+    }
+
     /// Obnova gestem stažení dolů na hlavní obrazovce.
     func refreshDashboard() async {
         async let gradesTask: Void = loadGrades(force: true)
         async let timetableTask: Void = loadTimetable(force: true)
         _ = await (gradesTask, timetableTask)
+        await loadSubstitutions(force: true)
     }
 
     // MARK: - Odvozená data
@@ -278,8 +321,13 @@ final class AppModel {
 
 // MARK: - Nastavení
 
+/// Uživatelská nastavení.
+///
+/// Ukládají se do `UserDefaults`; nic z toho není citlivé a po restartu se to
+/// hodí mít. Heslo je jinde, v Klíčence.
 @Observable
 final class AppSettings {
+
     enum SubjectSorting: String, CaseIterable, Identifiable {
         case alphabetical, worstAverage, recentActivity
 
@@ -294,16 +342,91 @@ final class AppSettings {
         }
     }
 
-    var subjectSorting: SubjectSorting = .recentActivity
-    var notifyOnNewGrade = true
-    var notifyOnNewNotification = true
-    var notifyOnTimetableChange = false
-    var notifyOnNews = false
+    var subjectSorting: SubjectSorting { didSet { save() } }
+    var notifyOnNewGrade: Bool { didSet { save() } }
+    var notifyOnNewNotification: Bool { didSet { save() } }
+    var notifyOnTimetableChange: Bool { didSet { save() } }
+    var notifyOnNews: Bool { didSet { save() } }
     /// Upozornění se posílají jen ve školních hodinách, ať telefon nepíská v noci.
-    var quietHoursEnabled = true
-    var backgroundRefreshEnabled = true
-    var showNSymbolInAverages = false
-    var simulatedFailure: MockJecnaService.FailureMode = .none
+    var quietHoursEnabled: Bool { didSet { save() } }
+    var backgroundRefreshEnabled: Bool { didSet { save() } }
+    var showNSymbolInAverages: Bool { didSet { save() } }
+
+    /// Mimořádný rozvrh se tahá z cizí služby, proto jde vypnout.
+    var substitutionsEnabled: Bool { didSet { save() } }
+    /// Vlastní adresa poskytovatele; prázdná znamená výchozí.
+    var substitutionProvider: String { didSet { save() } }
+
+    /// Jen pro maketu, neukládá se.
+    @ObservationIgnored var simulatedFailure: MockJecnaService.FailureMode = .none
+
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var isLoading = true
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+
+        subjectSorting = SubjectSorting(rawValue: defaults.string(forKey: Key.subjectSorting) ?? "")
+            ?? .recentActivity
+        notifyOnNewGrade = defaults.bool(forKey: Key.notifyOnNewGrade, default: true)
+        notifyOnNewNotification = defaults.bool(forKey: Key.notifyOnNewNotification, default: true)
+        notifyOnTimetableChange = defaults.bool(forKey: Key.notifyOnTimetableChange, default: false)
+        notifyOnNews = defaults.bool(forKey: Key.notifyOnNews, default: false)
+        quietHoursEnabled = defaults.bool(forKey: Key.quietHours, default: true)
+        backgroundRefreshEnabled = defaults.bool(forKey: Key.backgroundRefresh, default: true)
+        showNSymbolInAverages = defaults.bool(forKey: Key.showN, default: false)
+        substitutionsEnabled = defaults.bool(forKey: Key.substitutionsEnabled, default: true)
+        substitutionProvider = defaults.string(forKey: Key.substitutionProvider) ?? ""
+
+        isLoading = false
+    }
+
+    /// Adresa poskytovatele, se kterou se má pracovat.
+    var substitutionProviderURL: URL {
+        let trimmed = substitutionProvider.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed), url.scheme != nil else {
+            return SubstitutionService.defaultProvider
+        }
+        return url
+    }
+
+    private func save() {
+        // V `init` se hodnoty nastavují jedna po druhé; zapisovat je zpátky
+        // by bylo zbytečné.
+        guard !isLoading else { return }
+
+        defaults.set(subjectSorting.rawValue, forKey: Key.subjectSorting)
+        defaults.set(notifyOnNewGrade, forKey: Key.notifyOnNewGrade)
+        defaults.set(notifyOnNewNotification, forKey: Key.notifyOnNewNotification)
+        defaults.set(notifyOnTimetableChange, forKey: Key.notifyOnTimetableChange)
+        defaults.set(notifyOnNews, forKey: Key.notifyOnNews)
+        defaults.set(quietHoursEnabled, forKey: Key.quietHours)
+        defaults.set(backgroundRefreshEnabled, forKey: Key.backgroundRefresh)
+        defaults.set(showNSymbolInAverages, forKey: Key.showN)
+        defaults.set(substitutionsEnabled, forKey: Key.substitutionsEnabled)
+        defaults.set(substitutionProvider, forKey: Key.substitutionProvider)
+    }
+
+    private enum Key {
+        static let subjectSorting = "settings.subjectSorting"
+        static let notifyOnNewGrade = "settings.notifyOnNewGrade"
+        static let notifyOnNewNotification = "settings.notifyOnNewNotification"
+        static let notifyOnTimetableChange = "settings.notifyOnTimetableChange"
+        static let notifyOnNews = "settings.notifyOnNews"
+        static let quietHours = "settings.quietHours"
+        static let backgroundRefresh = "settings.backgroundRefresh"
+        static let showN = "settings.showNSymbolInAverages"
+        static let substitutionsEnabled = "settings.substitutionsEnabled"
+        static let substitutionProvider = "settings.substitutionProvider"
+    }
+}
+
+private extension UserDefaults {
+    /// `bool(forKey:)` vrací `false` i pro nenastavený klíč, což se plete
+    /// s přepínačem, který má být ve výchozím stavu zapnutý.
+    func bool(forKey key: String, default defaultValue: Bool) -> Bool {
+        object(forKey: key) == nil ? defaultValue : bool(forKey: key)
+    }
 }
 
 // MARK: - Sledování nových známek

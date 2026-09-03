@@ -37,6 +37,8 @@ struct SettingsView: View {
                 Text("Upozornění, které by přišlo mezi 21:00 a 7:00, se odloží na ráno.")
             }
 
+            substitutionSection
+
             Section("Známky") {
                 Picker("Řazení předmětů", selection: $settings.subjectSorting) {
                     ForEach(AppSettings.SubjectSorting.allCases) { sorting in
@@ -106,6 +108,49 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+
+    /// Mimořádný rozvrh nechodí ze školního webu, proto vlastní oddíl
+    /// s vysvětlením, odkud se data berou, a s možností poskytovatele změnit.
+    @ViewBuilder
+    fileprivate var substitutionSection: some View {
+        @Bindable var settings = model.settings
+
+        Section {
+            Toggle("Zobrazovat mimořádný rozvrh", isOn: $settings.substitutionsEnabled)
+                .onChange(of: settings.substitutionsEnabled) { _, _ in
+                    Task { await model.loadSubstitutions(force: true) }
+                }
+
+            if settings.substitutionsEnabled {
+                if let schedule = model.substitutions.value {
+                    LabeledContent("Aktualizováno", value: schedule.status.lastUpdated)
+                } else if let error = model.substitutions.error {
+                    Text(error.errorDescription ?? "Nedostupné")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+
+                TextField("Vlastní adresa služby", text: $settings.substitutionProvider)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onSubmit {
+                        Task { await model.loadSubstitutions(force: true) }
+                    }
+            }
+        } header: {
+            Text("Mimořádný rozvrh")
+        } footer: {
+            Text("""
+            Suplování škola nevede na svém webu, ale v tabulce na SharePointu \
+            za přihlášením Microsoftem, kam se aplikace nedostane. Data proto \
+            pocházejí z veřejné služby, která tu tabulku převádí na data — \
+            není to server školy. Adresu jde přepsat na vlastní. O tobě se \
+            neodesílá nic: stáhne se celá tabulka a tvoje třída se vybírá \
+            až v telefonu.
+            """)
+        }
+    }
 
     /// Stav systémového oprávnění a přehled naplánovaných upozornění na úkoly.
     /// Úkoly jsou lokální, takže se tady dá spolehlivě ukázat i počet.

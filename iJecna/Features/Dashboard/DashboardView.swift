@@ -19,6 +19,8 @@ struct DashboardView: View {
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
 
+                        SubstitutionTodaySection(selection: $selection)
+
                         TasksSummarySection(selection: $selection)
 
                         TodayScheduleSection(selection: $selection)
@@ -559,6 +561,74 @@ private struct RecentGradeRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .contentShape(.rect)
+    }
+}
+
+// MARK: - Mimořádný rozvrh
+
+/// Dnešní změny v rozvrhu. Ukazuje se jen když opravdu něco je —
+/// prázdná karta „žádné změny“ by jen zabírala místo.
+struct SubstitutionTodaySection: View {
+    @Binding var selection: AppTab
+    @Environment(AppModel.self) private var model
+
+    private var today: SubstitutionDay? {
+        guard let day = model.substitutionDay(on: .now), day.hasAnything else { return nil }
+        return day
+    }
+
+    var body: some View {
+        if let today {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Mimořádný rozvrh", subtitle: subtitle(today)) {
+                    Button("Rozvrh") { selection = .timetable }
+                        .font(.subheadline)
+                }
+
+                GlassCard(tint: today.isSchoolDay ? .orange : .red) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !today.isSchoolDay {
+                            Label("Dnes se neučí", systemImage: "calendar.badge.exclamationmark")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.red)
+                        }
+
+                        ForEach(changes(today), id: \.period) { item in
+                            HStack(spacing: 10) {
+                                Text("\(item.period).")
+                                    .font(.subheadline.weight(.bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.orange)
+                                    .frame(width: 24, alignment: .leading)
+                                Text(item.change.displayText)
+                                    .font(.subheadline)
+                                Spacer(minLength: 0)
+                            }
+                        }
+
+                        if let note = today.note {
+                            Text(note)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func changes(_ day: SubstitutionDay) -> [(period: Int, change: SubstitutionChange)] {
+        day.changes.enumerated().compactMap { index, change in
+            guard let change else { return nil }
+            return (index + 1, change)
+        }
+    }
+
+    private func subtitle(_ day: SubstitutionDay) -> String? {
+        let count = changes(day).count
+        guard count > 0 else { return nil }
+        return count == 1 ? "1 změna dnes" : "\(count) změn dnes"
     }
 }
 

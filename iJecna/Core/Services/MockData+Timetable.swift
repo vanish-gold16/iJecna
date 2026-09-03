@@ -215,6 +215,40 @@ extension MockData {
         ]
     }
 
+    // MARK: - Mimořádný rozvrh
+
+    /// Ukázkové suplování pro maketu — dnes dvě změny, zítra ředitelské volno.
+    static var substitutionSchedule: SubstitutionSchedule {
+        let today = Date.startOfSchoolDay()
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+
+        func change(_ text: String) -> SubstitutionChange {
+            SubstitutionChange(text: text, backgroundColor: nil, foregroundColor: nil, willBeSpecified: nil)
+        }
+
+        return SubstitutionSchedule(
+            status: SubstitutionStatus(lastUpdated: "07:40", currentUpdateSchedule: 180),
+            days: [
+                SubstitutionDay(
+                    date: today,
+                    isSchoolDay: true,
+                    changes: [nil, nil, change("MAT Hor(Kra)+"), nil, change("FYZ 212 Kra(Nov)+"), nil, nil, nil, nil, nil],
+                    absences: [],
+                    note: "Písemná maturitní práce z ČJ v učebnách K7 a 20 od 8:00",
+                    announcements: []
+                ),
+                SubstitutionDay(
+                    date: tomorrow,
+                    isSchoolDay: false,
+                    changes: [],
+                    absences: [],
+                    note: "Ředitelské volno",
+                    announcements: []
+                ),
+            ]
+        )
+    }
+
     // MARK: - Student
 
     static var student: Student {

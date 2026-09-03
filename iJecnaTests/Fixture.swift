@@ -18,6 +18,8 @@ enum Fixture: String, CaseIterable {
     case locker = "SPŠE Ječná - Skříňka.html"
     /// Pozor: v názvu souboru je pevná mezera, tak ho web pojmenoval.
     case studentProfile = "SPŠE Ječná - Mytrofanov\u{00A0}Ivan.html"
+    /// Odpověď služby s mimořádným rozvrhem — jediná fixtura, která není HTML.
+    case substitutions = "substitutions-v3.json"
 
     private static let directory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -40,10 +42,14 @@ final class FixtureTests: XCTestCase {
         for fixture in Fixture.allCases {
             let html = try fixture.html()
             XCTAssertFalse(html.isEmpty, "Stránka „\(fixture.rawValue)“ je prázdná")
-            XCTAssertTrue(
-                html.contains("spsejecna") || html.contains("Ječná"),
-                "Stránka „\(fixture.rawValue)“ nevypadá jako web školy"
-            )
+            if fixture == .substitutions {
+                XCTAssertTrue(html.contains("\"schedule\""), "Odpověď služby nemá očekávaný tvar")
+            } else {
+                XCTAssertTrue(
+                    html.contains("spsejecna") || html.contains("Ječná"),
+                    "Stránka „\(fixture.rawValue)“ nevypadá jako web školy"
+                )
+            }
         }
     }
 }

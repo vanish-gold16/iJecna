@@ -28,7 +28,7 @@ SIMCTL_CHILD_USE_MOCK=1 xcrun simctl launch booted mytrofanov.iJecna
 |---|---|
 | **Dnes** | probíhající nebo nejbližší hodina s postupem bloku, nové známky, úkoly a testy, dnešní rozvrh, prospěch |
 | **Známky** | vážený průměr, rozložení známek, předměty, detail s částmi (Teorie / Cvičení) a predikcí „co když dostanu…“ |
-| **Rozvrh** | denní seznam i týdenní mřížka, dělené skupiny, vícehodinové bloky, detail hodiny |
+| **Rozvrh** | denní seznam i týdenní mřížka, dělené skupiny, vícehodinové bloky, detail hodiny, mimořádný rozvrh |
 | **Úkoly** | vlastní úkoly, testy a projekty s lokálními upozorněními |
 | **Více** | aktuality, učitelé, učebny, profil, skříňka, poznámky a pochvaly, nastavení |
 
@@ -90,6 +90,20 @@ Stránky (všechny vracejí HTML):
 
 `schoolYearId = prvníKalendářníRok − 2008`. Pololetí: `21` první, `22` druhé.
 Jídelna je samostatný systém (`strav.nasejidelna.cz`, kód `0341`) s vlastním přihlášením.
+
+### Mimořádný rozvrh
+
+Suplování škola nevede na svém webu, ale v tabulce na SharePointu za přihlášením
+Microsoftem — tam se aplikace nedostane. Data proto pocházejí z veřejné služby
+(výchozí `https://jecnarozvrh.jzitnik.dev`, endpointy `/status` a `/versioned/v3`),
+která tu tabulku převádí na JSON. Adresu jde v nastavení přepsat.
+
+Dvě věci, které z toho plynou:
+
+- **Není to server školy.** Výpadek téhle služby proto nesmí shodit řádný rozvrh;
+  chyba se nikde nevnucuje, jen se změny neukážou.
+- **Neodesílá se nic o uživateli.** Stáhne se celá veřejná tabulka a třída se
+  filtruje až v telefonu, takže se služba nedozví ani třídu, ani kdo se ptá.
 
 ### Chování serveru, na které se naráží
 
