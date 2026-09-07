@@ -28,6 +28,23 @@ struct SubstitutionChange: Hashable, Codable, Sendable {
     }
 
     var isConfirmed: Bool { text.hasSuffix("+") }
+
+    /// Odpadlá hodina. Tabulka ji píše pokaždé trochu jinak — „odpadá“, „odp.“,
+    /// „nekoná se“, nebo jen pomlčkou — proto se text porovnává znormalizovaný,
+    /// bez diakritiky a bez ohledu na velikost písmen.
+    var isCancelled: Bool {
+        let normalized = displayText
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return false }
+        if Self.cancelledMarks.contains(normalized) { return true }
+        return Self.cancelledPhrases.contains { normalized.contains($0) }
+    }
+
+    /// Buňka, ve které není nic než značka „hodina se neučí“.
+    private static let cancelledMarks: Set<String> = ["-", "--", "---", "\u{2013}", "\u{2014}", "x", "\u{00D7}", "od", "odp", "odp."]
+
+    private static let cancelledPhrases = ["odpad", "nekona se", "nevyucuje", "zruseno", "bez vyuky", "volno"]
 }
 
 /// Nepřítomný učitel a rozsah jeho absence.
@@ -116,6 +133,11 @@ struct SubstitutionDay: Hashable, Sendable, Identifiable {
     /// Změna kdekoli v bloku, který se táhne přes víc hodin.
     func change(forPeriods range: ClosedRange<Int>) -> SubstitutionChange? {
         range.compactMap { change(forPeriod: $0) }.first
+    }
+
+    /// Kolik hodin toho dne odpadá.
+    var cancelledCount: Int {
+        changes.compactMap { $0 }.filter(\.isCancelled).count
     }
 }
 

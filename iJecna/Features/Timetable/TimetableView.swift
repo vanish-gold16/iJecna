@@ -73,8 +73,19 @@ struct TimetableView: View {
         case .loaded(let page, _):
             switch layout {
             case .day: dayLayout(page)
-            case .week: WeekGridView(page: page, preferredGroup: model.profile.value?.primaryGroup)
+            case .week: WeekGridView(
+                page: page,
+                preferredGroup: model.profile.value?.primaryGroup,
+                substitutions: substitutionsByDay
+            )
             }
+        }
+    }
+
+    /// Mimořádný rozvrh pro celý týden — mřížka potřebuje všechny dny naráz.
+    private var substitutionsByDay: [Weekday: SubstitutionDay] {
+        Weekday.allCases.reduce(into: [:]) { result, weekday in
+            result[weekday] = model.substitutionDay(on: weekday.nextOccurrence())
         }
     }
 
@@ -277,6 +288,10 @@ struct LessonCard: View {
         periods.first { $0.number == spot.periodRange.upperBound }
     }
 
+    /// Hodina, která se neučí. Karta se pak čte jako přeškrtnutá poznámka,
+    /// ne jako výuka, na kterou se má někam jít.
+    private var isCancelled: Bool { substitution?.isCancelled == true }
+
     var body: some View {
         Button {
             onTap?()
@@ -316,7 +331,16 @@ struct LessonCard: View {
 
                 if let substitution {
                     Divider()
-                    SubstitutionBadge(change: substitution)
+                    HStack(spacing: 8) {
+                        SubstitutionBadge(change: substitution)
+                        if isCancelled {
+                            Text(freeTimeNote)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
                 }
 
                 if !tasks.isEmpty {
@@ -332,7 +356,12 @@ struct LessonCard: View {
         }
         .padding(14)
         .background {
-            if isCurrent {
+            if isCancelled {
+                // Šrafování na zeleném podkladu — odpadlá hodina má vypadat
+                // jako škrtnutý řádek v rozvrhu, ne jako běžná změna.
+                Theme.cancelled.opacity(0.09)
+                HatchPattern(color: Theme.cancelled.opacity(0.16))
+            } else if isCurrent {
                 Theme.accent.opacity(0.10)
             } else {
                 Color.clear
@@ -340,7 +369,13 @@ struct LessonCard: View {
         }
         .background(.background.secondary, in: Theme.cardShape)
         .overlay {
-            if isCurrent {
+            if isCancelled {
+                // Přerušovaný rámeček: hodina v rozvrhu je, ale neplatí.
+                Theme.cardShape.strokeBorder(
+                    Theme.cancelled.opacity(0.55),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])
+                )
+            } else if isCurrent {
                 Theme.cardShape.strokeBorder(Theme.accent.opacity(0.55), lineWidth: 1.5)
             } else if substitution != nil {
                 Theme.cardShape.strokeBorder(Color.orange.opacity(0.45), lineWidth: 1.5)
@@ -348,6 +383,17 @@ struct LessonCard: View {
         }
         .clipShape(Theme.cardShape)
         .contentShape(.rect)
+    }
+
+    /// Krátká odměna za odpadlou hodinu. Mění se podle délky bloku, ať to
+    /// není pořád dokola tatáž věta.
+    private var freeTimeNote: String {
+        switch spot.periodSpan {
+        case 1: "máš hodinu volno"
+        case 2: "máš dvě hodiny volno"
+        case 3: "máš tři hodiny volno"
+        default: "máš \(spot.periodSpan) hodin volno"
+        }
     }
 
     /// Úkol navázaný na tuhle hodinu. Jen informace — odškrtává se v detailu hodiny,
@@ -389,14 +435,15 @@ struct LessonCard: View {
             Text("\(spot.periodRange.lowerBound)\(spot.periodSpan > 1 ? "–\(spot.periodRange.upperBound)" : "")")
                 .font(.headline.weight(.bold))
                 .monospacedDigit()
-                .foregroundStyle(isCurrent ? Theme.accent : .primary)
+                .foregroundStyle(periodNumberColor)
+                .strikethrough(isCancelled, color: Theme.cancelled)
 
             LessonTaskIndicator(tasks: tasks)
 
             if substitution != nil {
-                Image(systemName: "arrow.triangle.2.circlepath")
+                Image(systemName: isCancelled ? "zzz" : "arrow.triangle.2.circlepath")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(isCancelled ? Theme.cancelled : Color.orange)
             }
 
             if let startPeriod, let endPeriod {
@@ -412,17 +459,33 @@ struct LessonCard: View {
             }
         }
         .frame(width: 46)
+        .opacity(isCancelled ? 0.7 : 1)
+    }
+
+    private var periodNumberColor: Color {
+        if isCancelled {
+            Theme.cancelled
+        } else if isCurrent {
+            Theme.accent
+        } else {
+            .primary
+        }
     }
 
     private func lessonBlock(_ lesson: Lesson, isPrimary: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
             SubjectMonogram(name: lesson.subject, size: 38)
                 .opacity(isPrimary ? 1 : 0.55)
+                // Barevná zkratka předmětu odpadlé hodině nepatří — vytáhla by
+                // pozornost k něčemu, co se dnes nekoná.
+                .saturation(isCancelled ? 0 : 1)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(lesson.subject.full)
                         .font(.subheadline.weight(.semibold))
+                        .strikethrough(isCancelled, color: .secondary)
+                        .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
                         .lineLimit(1)
                     if let group = lesson.group {
                         Text(group)
@@ -448,11 +511,12 @@ struct LessonCard: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .strikethrough(isCancelled, color: .secondary)
             }
 
             Spacer(minLength: 0)
         }
-        .opacity(isPrimary ? 1 : 0.7)
+        .opacity(isCancelled ? 0.65 : (isPrimary ? 1 : 0.7))
     }
 }
 
@@ -461,6 +525,9 @@ struct LessonCard: View {
 struct WeekGridView: View {
     let page: TimetablePage
     var preferredGroup: String?
+    /// Změny z mimořádného rozvrhu po dnech — v mřížce jde hlavně o to,
+    /// aby odpadlé hodiny šly poznat na první pohled.
+    var substitutions: [Weekday: SubstitutionDay] = [:]
 
     private var periods: [LessonPeriod] { page.timetable.occupiedPeriods }
 
@@ -508,15 +575,25 @@ struct WeekGridView: View {
             // Vícehodinovka se vykreslí jen na svém začátku, ostatní buňky zůstanou tlumené.
             let isStart = spot.periodRange.lowerBound == period.number
             let lesson = spot.lesson(preferringGroup: preferredGroup)
+            let isCancelled = substitutions[weekday]?.change(forPeriods: spot.periodRange)?.isCancelled == true
 
             VStack(spacing: 2) {
                 if isStart, let lesson {
                     Text(lesson.subject.abbreviation)
                         .font(.caption.weight(.bold))
+                        .strikethrough(isCancelled, color: Theme.cancelled)
+                        .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
                         .lineLimit(1)
-                    Text(lesson.classroom ?? "—")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                    if isCancelled {
+                        Label("odpadá", systemImage: "zzz")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Theme.cancelled)
+                            .lineLimit(1)
+                    } else {
+                        Text(lesson.classroom ?? "—")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
                     if spot.isSplit {
                         Text(lesson.group ?? "")
                             .font(.system(size: 8, weight: .semibold))
@@ -529,10 +606,16 @@ struct WeekGridView: View {
                 }
             }
             .frame(width: 78, height: 54)
-            .background(
-                isStart ? Theme.accent.opacity(0.12) : Theme.accent.opacity(0.05),
-                in: .rect(cornerRadius: 10, style: .continuous)
-            )
+            .background {
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+                if isCancelled {
+                    shape.fill(Theme.cancelled.opacity(isStart ? 0.14 : 0.06))
+                    HatchPattern(color: Theme.cancelled.opacity(0.14), spacing: 7, lineWidth: 1.5)
+                        .clipShape(shape)
+                } else {
+                    shape.fill(Theme.accent.opacity(isStart ? 0.12 : 0.05))
+                }
+            }
         } else {
             Color.secondary.opacity(0.06)
                 .frame(width: 78, height: 54)

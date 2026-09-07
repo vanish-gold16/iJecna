@@ -83,23 +83,27 @@ struct HeroLessonCard: View {
     @ViewBuilder
     private func content(for moment: LessonMoment) -> some View {
         if let lesson = moment.lesson, let startPeriod = moment.startPeriod, let endPeriod = moment.endPeriod {
-            GlassCard(tint: tint(for: moment.kind)) {
+            let isCancelled = self.isCancelled(moment)
+            GlassCard(tint: isCancelled ? Theme.cancelled : tint(for: moment.kind)) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 8) {
-                        Image(systemName: symbol(for: moment.kind))
+                        Image(systemName: isCancelled ? "zzz" : symbol(for: moment.kind))
                             .font(.caption.weight(.semibold))
-                        Text(headline(for: moment))
+                        Text(isCancelled ? cancelledHeadline(for: moment) : headline(for: moment))
                             .font(.caption.weight(.semibold))
                             .textCase(.uppercase)
                     }
-                    .foregroundStyle(tint(for: moment.kind))
+                    .foregroundStyle(isCancelled ? Theme.cancelled : tint(for: moment.kind))
 
                     HStack(alignment: .top, spacing: 14) {
                         SubjectMonogram(name: lesson.subject, size: 54)
+                            .saturation(isCancelled ? 0 : 1)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(lesson.subject.full)
                                 .font(.title2.weight(.bold))
+                                .strikethrough(isCancelled, color: .secondary)
+                                .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
                                 .lineLimit(2)
 
                             HStack(spacing: 10) {
@@ -123,7 +127,14 @@ struct HeroLessonCard: View {
                         Spacer(minLength: 0)
                     }
 
-                    if case .ongoing(let progress) = moment.kind {
+                    if isCancelled {
+                        // Ukazatel průběhu by u odpadlé hodiny lhal — místo něj
+                        // je tu rovnou to podstatné: do kdy je volno.
+                        Label("Volno do \(endPeriod.to.formatted)", systemImage: "sparkles")
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.cancelled)
+                    } else if case .ongoing(let progress) = moment.kind {
                         VStack(spacing: 6) {
                             ProgressView(value: progress)
                                 .tint(tint(for: moment.kind))
@@ -194,6 +205,21 @@ struct HeroLessonCard: View {
                 Task { await model.loadTimetable(force: true) }
             }
             .buttonStyle(.glass)
+        }
+    }
+
+    /// Odpadá ta hodina, kterou karta zrovna ukazuje? Bez toho by hlavní karta
+    /// hlásila „právě probíhá“ u výuky, která se dnes nekoná.
+    private func isCancelled(_ moment: LessonMoment) -> Bool {
+        guard let spot = moment.spot else { return false }
+        return model.substitutionDay(on: .now)?.change(forPeriods: spot.periodRange)?.isCancelled == true
+    }
+
+    private func cancelledHeadline(for moment: LessonMoment) -> String {
+        switch moment.kind {
+        case .ongoing: "Odpadá • máš volno"
+        case .intermission, .upcoming, .freePeriod: "Další hodina odpadá"
+        default: "Odpadá"
         }
     }
 
@@ -339,7 +365,9 @@ struct TodayScheduleSection: View {
                                     tasks: tasks.tasks(
                                         on: Date.startOfSchoolDay(),
                                         periodRange: spot.periodRange
-                                    )
+                                    ),
+                                    substitution: model.substitutionDay(on: .now)?
+                                        .change(forPeriods: spot.periodRange)
                                 )
                             }
                         }
@@ -380,8 +408,10 @@ struct CompactLessonRow: View {
     var preferredGroup: String?
     var isCurrent: Bool = false
     var tasks: [StudyTask] = []
+    var substitution: SubstitutionChange?
 
     private var lesson: Lesson? { spot.lesson(preferringGroup: preferredGroup) }
+    private var isCancelled: Bool { substitution?.isCancelled == true }
 
     private var timeRange: String {
         let start = periods.first { $0.number == spot.periodRange.lowerBound }
@@ -394,17 +424,19 @@ struct CompactLessonRow: View {
         HStack(spacing: 12) {
             Text(timeRange)
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(isCurrent ? Theme.accent : .secondary)
+                .foregroundStyle(isCurrent && !isCancelled ? Theme.accent : .secondary)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 42, alignment: .trailing)
 
             RoundedRectangle(cornerRadius: 2)
-                .fill(isCurrent ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(Color.clear))
+                .fill(accentBarStyle)
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(lesson?.subject.full ?? "Volná hodina")
                     .font(.subheadline.weight(isCurrent ? .semibold : .regular))
+                    .strikethrough(isCancelled, color: .secondary)
+                    .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
@@ -426,6 +458,12 @@ struct CompactLessonRow: View {
 
             LessonTaskIndicator(tasks: tasks)
 
+            if isCancelled {
+                Label("odpadá", systemImage: "zzz")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.cancelled)
+            }
+
             if spot.isSplit {
                 Image(systemName: "person.2")
                     .font(.caption)
@@ -434,7 +472,24 @@ struct CompactLessonRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(isCurrent ? Theme.accent.opacity(0.08) : .clear)
+        .background {
+            if isCancelled {
+                Theme.cancelled.opacity(0.08)
+                HatchPattern(color: Theme.cancelled.opacity(0.12), spacing: 8, lineWidth: 1.5)
+            } else if isCurrent {
+                Theme.accent.opacity(0.08)
+            }
+        }
+    }
+
+    private var accentBarStyle: AnyShapeStyle {
+        if isCancelled {
+            AnyShapeStyle(Theme.cancelled)
+        } else if isCurrent {
+            AnyShapeStyle(Theme.accent)
+        } else {
+            AnyShapeStyle(Color.clear)
+        }
     }
 }
 
@@ -594,14 +649,23 @@ struct SubstitutionTodaySection: View {
                         }
 
                         ForEach(changes(today), id: \.period) { item in
+                            let isCancelled = item.change.isCancelled
                             HStack(spacing: 10) {
                                 Text("\(item.period).")
                                     .font(.subheadline.weight(.bold))
                                     .monospacedDigit()
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(isCancelled ? Theme.cancelled : Color.orange)
+                                    .strikethrough(isCancelled, color: Theme.cancelled)
                                     .frame(width: 24, alignment: .leading)
                                 Text(item.change.displayText)
                                     .font(.subheadline)
+                                    .strikethrough(isCancelled, color: .secondary)
+                                    .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
+                                if isCancelled {
+                                    Image(systemName: "zzz")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(Theme.cancelled)
+                                }
                                 Spacer(minLength: 0)
                             }
                         }
@@ -628,7 +692,10 @@ struct SubstitutionTodaySection: View {
     private func subtitle(_ day: SubstitutionDay) -> String? {
         let count = changes(day).count
         guard count > 0 else { return nil }
-        return count == 1 ? "1 změna dnes" : "\(count) změn dnes"
+        let all = count == 1 ? "1 změna dnes" : "\(count) změn dnes"
+        let cancelled = day.cancelledCount
+        guard cancelled > 0 else { return all }
+        return "\(all) • \(cancelled) odpadá"
     }
 }
 

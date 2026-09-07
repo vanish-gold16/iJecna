@@ -8,6 +8,11 @@ enum Theme {
     static let accent = Color(light: Color(red: 0.05, green: 0.42, blue: 0.78),
                               dark: Color(red: 0.36, green: 0.68, blue: 1.00))
 
+    /// Odpadlá hodina. Zeleně schválně: pro studenta je to dobrá zpráva a barva
+    /// se neplete s oranžovou (změna v rozvrhu) ani červenou (celý den se neučí).
+    static let cancelled = Color(light: Color(hue: 0.42, saturation: 0.78, brightness: 0.58),
+                                 dark: Color(hue: 0.42, saturation: 0.62, brightness: 0.85))
+
     /// Barva známky na škále 1 (zelená) → 5 (červená). „N“ je neutrálně šedá.
     static func gradeColor(for value: Int) -> Color {
         switch value {

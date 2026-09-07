@@ -82,6 +82,37 @@ final class SubstitutionTests: XCTestCase {
         XCTAssertNil(day.change(forPeriod: 1))
     }
 
+    // MARK: - Odpadlé hodiny
+
+    func testRecognisesCancelledLesson() {
+        // Tabulku píše každý zástupce trochu jinak, poznat se musí všechny podoby.
+        for text in ["odpadá", "Odpadá+", "ODPADÁ", "TV odpadá", "odp.", "-", "—", "×",
+                     "nekoná se", "nevyučuje se", "zrušeno", "bez výuky"] {
+            XCTAssertTrue(change(text).isCancelled, "„\(text)“ má být odpadlá hodina")
+        }
+    }
+
+    func testSubstitutionIsNotCancelled() {
+        // Suplovaná hodina se učí dál — nesmí spadnout do odpadlých.
+        for text in ["TV He(Lc)+", "M 16 Ng(Jr)+", "CEL D2,L3 Pr,Zn(Sy) rozděl.", "2/2 IT 17b Ms(Jz)+", ""] {
+            XCTAssertFalse(change(text).isCancelled, "„\(text)“ nemá být odpadlá hodina")
+        }
+    }
+
+    func testCountsCancelledLessonsOfDay() {
+        let day = SubstitutionDay(
+            date: .now,
+            isSchoolDay: true,
+            changes: [change("odpadá"), nil, change("TV He(Lc)+"), change("ANJ odpadá+")],
+            absences: [], note: nil, announcements: []
+        )
+        XCTAssertEqual(day.cancelledCount, 2)
+    }
+
+    private func change(_ text: String) -> SubstitutionChange {
+        SubstitutionChange(text: text, backgroundColor: nil, foregroundColor: nil, willBeSpecified: nil)
+    }
+
     // MARK: - Absence učitelů
 
     func testReadsWholeDayAbsence() throws {
