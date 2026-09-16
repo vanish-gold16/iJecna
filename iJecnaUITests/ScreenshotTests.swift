@@ -143,4 +143,30 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(saved.waitForExistence(timeout: 5), "Test se nepřipojil k hodině")
         capture("44-hodina-s-testem")
     }
+
+    /// Nastavení kontroly novinek — stav systémového obnovování a ruční spuštění.
+    func testNotificationSettings() throws {
+        let app = launchApp(tab: "more")
+
+        // Nastavení je v posledním oddílu rozcestníku, pod okrajem obrazovky.
+        XCTAssertTrue(app.staticTexts["Aktuality"].waitForExistence(timeout: 10), "Rozcestník se nenačetl")
+        app.swipeUp()
+
+        let settings = app.staticTexts["Nastavení"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5), "Chybí položka Nastavení")
+        settings.tap()
+
+        // Oddíl s kontrolou novinek je až pod upozorněními na úkoly.
+        XCTAssertTrue(app.switches["Nové známky"].waitForExistence(timeout: 5), "Nastavení se neotevřelo")
+        app.swipeUp()
+
+        let checkNow = app.buttons["Zkontrolovat teď"]
+        XCTAssertTrue(checkNow.waitForExistence(timeout: 5), "Chybí ruční kontrola novinek")
+        capture("50-nastaveni-kontrola")
+
+        // Po odrolování zůstávají v dohledu tyhle dvě; přepínače nad nimi
+        // už jsou mimo obrazovku.
+        XCTAssertTrue(app.switches["Neupozorňovat v noci"].exists)
+        XCTAssertTrue(app.switches["Zobrazovat mimořádný rozvrh"].exists)
+    }
 }

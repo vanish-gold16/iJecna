@@ -48,6 +48,30 @@ Veškerý přístup ke školním datům vede přes protokol `JecnaService`. Exis
 dvě implementace — `WebJecnaService` nad skutečným webem a `MockJecnaService`
 pro maketu — a obrazovky mezi nimi nepoznají rozdíl.
 
+### Upozornění na nové známky
+
+Ječna nezná „přečteno“, takže se rozdíl počítá proti tomu, co jsme viděli
+naposledy. `NewGradesTracker` si proto vede dvě množiny:
+
+- **viděné** — co student měl na obrazovce; řídí odznak na záložce
+- **ohlášené** — o čem už přišlo upozornění
+
+Bez té druhé by kontrola na pozadí hlásila tytéž známky při každém probuzení:
+dokud se student do aplikace nepodívá, zůstávají nepřečtené. Při prvním
+spuštění se všechno označí za viděné, jinak by instalace vyvolala upozornění
+na celý půlrok zpětně.
+
+Kontrola běží dvěma cestami:
+
+- `BGAppRefreshTask` — kdy se spustí, rozhoduje systém. `earliestBeginDate`
+  je prosba, ne příkaz; na práci je zhruba třicet sekund.
+- při každém otevření aplikace, nejvýš jednou za čtvrt hodiny. Probuzení na
+  pozadí systém negarantuje a bez téhle pojistky by na některých telefonech
+  upozornění nepřišla vůbec.
+
+Okamžité doručení by vyžadovalo server, který by držel školní hesla studentů
+a chodil na web za ně. To tahle aplikace dělat nechce.
+
 ### Úkoly a testy
 
 Škola termíny úkolů ani písemek nezveřejňuje, takže si je student vede sám:
@@ -192,7 +216,7 @@ SIMCTL_CHILD_INITIAL_TAB=grades xcrun simctl launch booted mytrofanov.iJecna
 - [x] vlastní parser `spsejecna.cz` ve Swiftu (SwiftSoup), Keychain, automatické přihlášení
 - [x] snímkové testy parserů nad uloženým HTML
 - [x] profil učitele, učebny a skříňka
-- [ ] `BGAppRefreshTask` a upozornění na nové známky
+- [x] `BGAppRefreshTask` a upozornění na nové známky
 - [ ] jídelna, příchody a odchody, absence
 - [ ] katalog řetězců s angličtinou
 - [ ] widget a Live Activity s aktuální hodinou

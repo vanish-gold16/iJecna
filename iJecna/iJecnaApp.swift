@@ -18,6 +18,8 @@ struct iJecnaApp: App {
     /// Bez delegáta by se upozornění při otevřené aplikaci nezobrazilo.
     private let notificationPresenter = NotificationPresenter()
 
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         let scheduler = NotificationScheduler()
         _tasks = State(initialValue: StudyTaskStore(scheduler: scheduler))
@@ -39,12 +41,36 @@ struct iJecnaApp: App {
 
                     await model.restoreSession()
 
+                    BackgroundRefresh.schedule()
                     tasks.seedIfEmpty()
                     tasks.setQuietHours(model.settings.quietHoursEnabled)
                     // Systém si drží naplánované požadavky sám; po startu je srovnáme
                     // se skutečným stavem úkolů, ať nezůstanou viset zrušené termíny.
                     tasks.rescheduleAll()
+
+                    // Probuzení na pozadí systém negarantuje, proto se kontrola
+                    // pouští i tady — jinak by na některých telefonech
+                    // upozornění na nové známky nepřišla vůbec.
+                    await model.catchUpIfNeeded()
                 }
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                    case .active:
+                        Task { await model.catchUpIfNeeded() }
+                    case .background:
+                        // Bez nové žádosti při odchodu na pozadí by další
+                        // probuzení už nikdy nepřišlo.
+                        BackgroundRefresh.schedule()
+                    default:
+                        break
+                    }
+                }
+        }
+        // Systém si sám určí, kdy úlohu spustí; tady jen popíšeme, co se má stát.
+        .backgroundTask(.appRefresh(BackgroundRefresh.taskIdentifier)) {
+            await model.performBackgroundCheck()
+            // Další kolo se musí naplánovat hned, jinak řada skončí.
+            BackgroundRefresh.schedule()
         }
     }
 }

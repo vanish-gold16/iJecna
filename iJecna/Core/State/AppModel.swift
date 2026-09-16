@@ -73,6 +73,17 @@ final class AppModel {
     /// Běžíme na maketě? Ovlivňuje jen ladicí nástroje v nastavení.
     let isUsingMockData: Bool
 
+    /// Kdy naposledy proběhla kontrola novinek.
+    var lastUpdateCheck: Date?
+    var isCheckingForUpdates = false
+
+    @ObservationIgnored private lazy var watcher = SchoolWatcher(
+        service: service,
+        tracker: newGrades,
+        settings: settings,
+        scheduler: NotificationScheduler()
+    )
+
     init(service: JecnaService) {
         self.service = service
         self.isUsingMockData = service is MockJecnaService
@@ -263,6 +274,36 @@ final class AppModel {
         return substitutions.value?.day(on: date)
     }
 
+    // MARK: - Kontrola novinek
+
+    /// Kontrola na pozadí, spouštěná systémem.
+    ///
+    /// Musí být krátká a nesmí nic kreslit — aplikace přitom nemusí být vidět.
+    @discardableResult
+    func performBackgroundCheck() async -> SchoolWatcher.Findings {
+        guard settings.backgroundRefreshEnabled, !isUsingMockData else { return .init() }
+
+        let findings = await watcher.check()
+        lastUpdateCheck = .now
+        return findings
+    }
+
+    /// Dohnání zameškaného při otevření aplikace.
+    ///
+    /// Systém probuzení na pozadí negarantuje, takže se stejná kontrola pouští
+    /// i po návratu do aplikace. Bez toho by se na některých telefonech
+    /// upozornění neobjevila vůbec.
+    func catchUpIfNeeded(minimumInterval: TimeInterval = 15 * 60) async {
+        guard !isUsingMockData, session.isSignedIn, !isCheckingForUpdates else { return }
+        if let last = lastUpdateCheck, Date.now.timeIntervalSince(last) < minimumInterval { return }
+
+        isCheckingForUpdates = true
+        defer { isCheckingForUpdates = false }
+
+        await watcher.check()
+        lastUpdateCheck = .now
+    }
+
     /// Obnova gestem stažení dolů na hlavní obrazovce.
     func refreshDashboard() async {
         async let gradesTask: Void = loadGrades(force: true)
@@ -431,22 +472,29 @@ private extension UserDefaults {
 
 // MARK: - Sledování nových známek
 
-/// Pamatuje si, které známky uživatel už viděl.
+/// Pamatuje si, které známky uživatel už viděl a o kterých už dostal upozornění.
 ///
-/// Tohle je jádro upozornění na nové známky: aplikace na pozadí stáhne stránku
-/// se známkami, porovná id s uloženými a rozdíl ohlásí lokální notifikací.
-/// Ječna žádné „přečteno“ nezná, takže si stav musíme držet sami.
+/// Ječna žádné „přečteno“ nezná, takže si stav musíme držet sami. Množiny jsou
+/// dvě záměrně:
+///
+/// - `seen` — co už uživatel viděl na obrazovce. Řídí odznak na záložce.
+/// - `notified` — o čem už přišlo upozornění. Bez toho by kontrola na pozadí
+///   hlásila tytéž známky znovu při každém probuzení, protože dokud se uživatel
+///   do aplikace nepodívá, zůstávají nepřečtené.
 @Observable
 final class NewGradesTracker {
-    private static let storageKey = "seenGradeIds"
 
     private(set) var seenIds: Set<Int>
+    private(set) var notifiedIds: Set<Int>
     /// Známky, které přibyly od posledního potvrzení uživatelem.
     private(set) var unseenIds: Set<Int> = []
 
+    @ObservationIgnored private let defaults: UserDefaults
+
     init(defaults: UserDefaults = .standard) {
-        let stored = defaults.array(forKey: Self.storageKey) as? [Int] ?? []
-        seenIds = Set(stored)
+        self.defaults = defaults
+        seenIds = Set(defaults.array(forKey: Key.seen) as? [Int] ?? [])
+        notifiedIds = Set(defaults.array(forKey: Key.notified) as? [Int] ?? [])
     }
 
     var hasUnseen: Bool { !unseenIds.isEmpty }
@@ -455,22 +503,40 @@ final class NewGradesTracker {
     func isNew(_ grade: Grade) -> Bool { unseenIds.contains(grade.id) }
 
     /// Porovná čerstvě načtenou stránku s uloženým stavem.
-    func register(_ page: GradesPage) {
-        let ids = Set(page.subjects.flatMap { $0.allGrades.map(\.id) })
+    ///
+    /// - Returns: známky, o kterých se ještě neposílalo upozornění.
+    @discardableResult
+    func register(_ page: GradesPage) -> [Grade] {
+        let all = page.subjects.flatMap(\.allGrades)
+        let ids = Set(all.map(\.id))
 
-        // První spuštění: všechno bereme jako viděné, jinak by uživatele zavalilo.
+        // První spuštění: všechno bereme jako viděné, jinak by uživatele zavalilo
+        // upozorněním na celý půlrok pozpátku.
         guard !seenIds.isEmpty else {
             seenIds = ids
+            notifiedIds = ids
             persist()
-            return
+            return []
         }
 
-        unseenIds.formUnion(ids.subtracting(seenIds))
+        let fresh = ids.subtracting(seenIds)
+        unseenIds.formUnion(fresh)
+
+        let toAnnounce = fresh.subtracting(notifiedIds)
+        return all.filter { toAnnounce.contains($0.id) }
+    }
+
+    /// Potvrdí, že o těchhle známkách už upozornění odešlo.
+    func markNotified(_ grades: [Grade]) {
+        guard !grades.isEmpty else { return }
+        notifiedIds.formUnion(grades.map(\.id))
+        persist()
     }
 
     /// Uživatel si známky prohlédl.
     func markAllSeen() {
         seenIds.formUnion(unseenIds)
+        notifiedIds.formUnion(unseenIds)
         unseenIds.removeAll()
         persist()
     }
@@ -478,14 +544,16 @@ final class NewGradesTracker {
     func markSeen(_ grade: Grade) {
         unseenIds.remove(grade.id)
         seenIds.insert(grade.id)
+        notifiedIds.insert(grade.id)
         persist()
     }
 
-    private func persist(defaults: UserDefaults = .standard) {
-        defaults.set(Array(seenIds), forKey: Self.storageKey)
+    private func persist() {
+        defaults.set(Array(seenIds), forKey: Key.seen)
+        defaults.set(Array(notifiedIds), forKey: Key.notified)
     }
 
-    /// Jen pro maketu — nasimuluje, že tři nejnovější známky jsou nové.
+    /// Jen pro maketu — nasimuluje, že několik posledních známek je nových.
     func simulateNewGrades(from page: GradesPage, count: Int = 3) {
         let newest = page.subjects
             .flatMap(\.allGrades)
@@ -494,5 +562,11 @@ final class NewGradesTracker {
             .map(\.id)
         unseenIds = Set(newest)
         seenIds.subtract(unseenIds)
+        notifiedIds.subtract(unseenIds)
+    }
+
+    private enum Key {
+        static let seen = "seenGradeIds"
+        static let notified = "notifiedGradeIds"
     }
 }

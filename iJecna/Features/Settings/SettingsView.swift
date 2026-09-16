@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import BackgroundTasks
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
@@ -7,6 +8,7 @@ struct SettingsView: View {
     @State private var showsSignOutConfirmation = false
     @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @State private var pendingReminders = 0
+    @State private var backgroundStatus: UIBackgroundRefreshStatus = .available
 
     var body: some View {
         @Bindable var settings = model.settings
@@ -27,14 +29,51 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Obnovovat na pozadí", isOn: $settings.backgroundRefreshEnabled)
+                    .onChange(of: settings.backgroundRefreshEnabled) { _, enabled in
+                        enabled ? BackgroundRefresh.schedule() : BackgroundRefresh.cancel()
+                    }
+
+                LabeledContent("Systémové obnovování") {
+                    Text(backgroundStatus.explanation)
+                        .foregroundStyle(backgroundStatus.isUsable ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                }
+
+                LabeledContent("Poslední kontrola") {
+                    if let last = model.lastUpdateCheck {
+                        Text(last, format: .relative(presentation: .numeric))
+                    } else {
+                        Text("zatím neproběhla").foregroundStyle(.secondary)
+                    }
+                }
+
+                Button {
+                    Task { await model.catchUpIfNeeded(minimumInterval: 0) }
+                } label: {
+                    HStack {
+                        Text("Zkontrolovat teď")
+                        if model.isCheckingForUpdates {
+                            Spacer()
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
+                .disabled(model.isCheckingForUpdates || model.isUsingMockData)
                 Toggle("Neupozorňovat v noci", isOn: $settings.quietHoursEnabled)
                     .onChange(of: settings.quietHoursEnabled) { _, newValue in
                         // Změna se musí propsat do už naplánovaných upozornění.
                         tasks.setQuietHours(newValue)
                         Task { pendingReminders = await tasks.pendingNotificationCount() }
                     }
+            } header: {
+                Text("Kontrola novinek")
             } footer: {
-                Text("Upozornění, které by přišlo mezi 21:00 a 7:00, se odloží na ráno.")
+                Text("""
+                Kdy se aplikace na pozadí probudí, rozhoduje systém — bývá to \
+                několikrát denně a jen když aplikaci používáš. Zpoždění desítek \
+                minut je normální. Okamžité doručení by vyžadovalo server, který \
+                by držel tvoje školní heslo; to tahle aplikace dělat nechce. \
+                Kontrola se proto pouští i pokaždé, když aplikaci otevřeš.
+                """)
             }
 
             substitutionSection
@@ -91,6 +130,7 @@ struct SettingsView: View {
         .task {
             authorizationStatus = await tasks.notificationAuthorizationStatus()
             pendingReminders = await tasks.pendingNotificationCount()
+            backgroundStatus = BackgroundRefresh.systemStatus
         }
         .confirmationDialog(
             "Opravdu se chceš odhlásit?",

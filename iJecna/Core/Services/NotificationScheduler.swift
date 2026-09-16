@@ -91,6 +91,40 @@ final class NotificationScheduler {
             .count
     }
 
+    // MARK: - Okamžitá upozornění
+
+    /// Pošle upozornění hned teď.
+    ///
+    /// Používá se po kontrole na pozadí: na rozdíl od termínů úkolů se čas
+    /// nedá naplánovat dopředu — víme o změně až ve chvíli, kdy ji najdeme.
+    func notifyNow(
+        identifier: String,
+        title: String,
+        body: String,
+        threadIdentifier: String? = nil,
+        userInfo: [String: String] = [:]
+    ) async {
+        guard await authorizationStatus() == .authorized else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        if let threadIdentifier {
+            // Upozornění ze stejného zdroje se v Oznámeních seskupí k sobě.
+            content.threadIdentifier = threadIdentifier
+        }
+        content.userInfo = userInfo
+
+        let request = UNNotificationRequest(
+            identifier: Self.identifierPrefix + identifier,
+            content: content,
+            // Bez spouštěče se doručí okamžitě.
+            trigger: nil
+        )
+        try? await center.add(request)
+    }
+
     // MARK: - Texty
 
     private static func title(for task: StudyTask) -> String {
