@@ -33,7 +33,6 @@ final class SubstitutionTests: XCTestCase {
         let schedule = self.schedule()
         let day = try XCTUnwrap(schedule.days.last)
         XCTAssertEqual(day.note, "Písemná maturitní práce z ČJ v učebnách K7 a 20 od 8.00 (Kt, Kp)")
-        XCTAssertTrue(day.isSchoolDay)
     }
 
     func testEmptyNoteBecomesNil() throws {
@@ -42,9 +41,12 @@ final class SubstitutionTests: XCTestCase {
         XCTAssertNil(day.note)
     }
 
-    func testRecognisesDayWithoutTeaching() throws {
-        let day = try XCTUnwrap(schedule().days.first)
-        XCTAssertFalse(day.isSchoolDay)
+    func testReadsPreparationFlag() throws {
+        // `inWork` znamená rozpracovaný den, ne volno: 3. 9. se normálně učilo
+        // a suplovalo, 4. 9. byl v tabulce teprve v přípravě.
+        let days = schedule().days
+        XCTAssertFalse(try XCTUnwrap(days.first).isInPreparation)
+        XCTAssertTrue(try XCTUnwrap(days.last).isInPreparation)
     }
 
     // MARK: - Změny pro třídu
@@ -102,7 +104,7 @@ final class SubstitutionTests: XCTestCase {
     func testCountsCancelledLessonsOfDay() {
         let day = SubstitutionDay(
             date: .now,
-            isSchoolDay: true,
+            isInPreparation: false,
             changes: [change("odpadá"), nil, change("TV He(Lc)+"), change("ANJ odpadá+")],
             absences: [], note: nil, announcements: []
         )
@@ -138,7 +140,7 @@ final class SubstitutionTests: XCTestCase {
     func testLooksUpChangeForOwnGroupOnly() {
         let day = SubstitutionDay(
             date: .now,
-            isSchoolDay: true,
+            isInPreparation: false,
             changes: [change("2/2 odpadá"), change("1/2 odpadá"), change("C 14 Ja(Mr)+")],
             absences: [], note: nil, announcements: []
         )
@@ -150,6 +152,38 @@ final class SubstitutionTests: XCTestCase {
 
         XCTAssertEqual(day.cancelledCount(forGroup: 1), 1)
         XCTAssertEqual(day.cancelledCount, 2)
+    }
+
+    // MARK: - Hodiny navíc
+
+    func testFindsChangesInFreePeriods() {
+        let timetableDay = TimetableDay(weekday: .monday, spots: [
+            LessonSpot(startPeriod: 1, lessons: [Lesson(subject: DisplayName("Matematika", short: "M"))]),
+            .empty(at: 2), .empty(at: 3), .empty(at: 4), .empty(at: 5),
+        ])
+        let day = SubstitutionDay(
+            date: .now,
+            isInPreparation: false,
+            changes: [
+                change("M 16 Ng(Jr)+"),          // 1. hodina je v rozvrhu — obyčejná změna
+                change("CEL D2 Pr(Sy)"),        // 2.–3. stejná buňka = jeden blok
+                change("CEL D2 Pr(Sy)"),
+                change("odpadá"),               // volná hodina nemá co odpadnout
+                change("1/2 IT 17b Ms(Jz)+"),   // jen pro první skupinu
+            ],
+            absences: [], note: nil, announcements: []
+        )
+
+        let extras = day.extraLessons(outside: timetableDay, group: 2)
+        XCTAssertEqual(extras.map(\.periods), [2...3])
+        XCTAssertEqual(extras.first?.change.displayText, "CEL D2 Pr(Sy)")
+
+        XCTAssertEqual(day.extraLessons(outside: timetableDay, group: 1).map(\.periods), [2...3, 5...5])
+    }
+
+    func testReadsSubjectAbbreviationOfChange() {
+        XCTAssertEqual(change("2/2 IT 17b Ms(Jz)+").subjectAbbreviation, "IT")
+        XCTAssertEqual(change("A 16 \nHo(Jr)+").subjectAbbreviation, "A")
     }
 
     func testCollapsesWhitespaceInCellText() {
@@ -217,7 +251,7 @@ final class SubstitutionTests: XCTestCase {
 
     func testDayWithNothingIsRecognised() {
         let empty = SubstitutionDay(
-            date: .now, isSchoolDay: true, changes: [nil, nil],
+            date: .now, isInPreparation: false, changes: [nil, nil],
             absences: [], note: nil, announcements: []
         )
         XCTAssertFalse(empty.hasAnything)

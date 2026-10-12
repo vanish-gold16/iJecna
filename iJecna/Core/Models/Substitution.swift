@@ -49,6 +49,11 @@ struct SubstitutionChange: Hashable, Codable, Sendable {
         displayText.replacing(Self.groupPrefix, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Zkratka předmětu — první slovo buňky („M 16 Ng(Jr)“ → „M“).
+    var subjectAbbreviation: String? {
+        textWithoutGroup.split(separator: " ").first.map(String.init)
+    }
+
     /// Odpadlá hodina. Tabulka ji píše pokaždé trochu jinak — „odpadá“, „odp.“,
     /// „nekoná se“, nebo jen pomlčkou — proto se text porovnává znormalizovaný,
     /// bez diakritiky a bez ohledu na velikost písmen.
@@ -131,8 +136,11 @@ struct SubstitutionAnnouncement: Hashable, Codable, Sendable, Identifiable {
 /// Suplování pro jeden den.
 struct SubstitutionDay: Hashable, Sendable, Identifiable {
     let date: Date
-    /// Učí se ten den vůbec? Ředitelské volno má `false`.
-    let isSchoolDay: Bool
+    /// Tabulka na tenhle den se ještě připravuje, změny se můžou doplnit.
+    ///
+    /// Pozor, neznamená to, že se neučí: služba to hlásí jako `inWork`
+    /// a JecnaApp u dne píše „(příprava)“. Volný den služba nijak neoznačuje.
+    let isInPreparation: Bool
     /// Změny po vyučovacích hodinách. Index odpovídá pořadí hodin od první.
     let changes: [SubstitutionChange?]
     let absences: [TeacherAbsence]
@@ -143,7 +151,7 @@ struct SubstitutionDay: Hashable, Sendable, Identifiable {
     var id: Date { date }
 
     var hasAnything: Bool {
-        changes.contains { $0 != nil } || note != nil || !announcements.isEmpty || !isSchoolDay
+        changes.contains { $0 != nil } || note != nil || !announcements.isEmpty
     }
 
     /// Změna pro hodinu podle jejího čísla v rozvrhu (první hodina = 1).
@@ -168,6 +176,29 @@ struct SubstitutionDay: Hashable, Sendable, Identifiable {
         return range.compactMap { change(forPeriod: $0) }.first { !$0.applies(toGroup: group) }
     }
 
+    /// Změny v hodinách, kde podle rozvrhu nic není — hodina navíc nebo
+    /// přesunutá odjinud. Stejné sousední buňky se slijí do jednoho bloku,
+    /// stejně jako rozvrh slévá dvouhodinovky.
+    ///
+    /// Odpadnout nemá co, takže „odpadá“ ve volné hodině se vynechá.
+    func extraLessons(outside day: TimetableDay?, group: Int?) -> [ExtraLesson] {
+        var result: [ExtraLesson] = []
+        for (index, change) in changes.enumerated() {
+            guard let change, change.applies(toGroup: group), !change.isCancelled else { continue }
+            let period = index + 1
+            if let spot = day?.spot(atPeriod: period), !spot.isEmpty { continue }
+
+            if let last = result.last,
+               last.periods.upperBound == period - 1,
+               last.change.displayText == change.displayText {
+                result[result.count - 1] = ExtraLesson(periods: last.periods.lowerBound...period, change: last.change)
+            } else {
+                result.append(ExtraLesson(periods: period...period, change: change))
+            }
+        }
+        return result
+    }
+
     /// Kolik hodin toho dne odpadá.
     var cancelledCount: Int { cancelledCount(forGroup: nil) }
 
@@ -175,6 +206,14 @@ struct SubstitutionDay: Hashable, Sendable, Identifiable {
     func cancelledCount(forGroup group: Int?) -> Int {
         changes.compactMap { $0 }.filter { $0.isCancelled && $0.applies(toGroup: group) }.count
     }
+}
+
+/// Hodina z mimořádného rozvrhu, kterou řádný rozvrh nemá.
+struct ExtraLesson: Identifiable, Hashable, Sendable {
+    let periods: ClosedRange<Int>
+    let change: SubstitutionChange
+
+    var id: Int { periods.lowerBound }
 }
 
 /// Suplování pro konkrétní třídu.

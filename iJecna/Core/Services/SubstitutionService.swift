@@ -105,7 +105,7 @@ actor SubstitutionService {
 
             return SubstitutionDay(
                 date: day,
-                isSchoolDay: daily.info.inWork,
+                isInPreparation: daily.info.inWork,
                 changes: daily.changes[className] ?? [],
                 absences: daily.absence,
                 note: daily.takesPlace?.normalizedWhitespace.nilIfEmpty,
@@ -154,6 +154,7 @@ actor SubstitutionService {
     }
 
     struct DayInfo: Decodable, Sendable {
+        /// Den je v tabulce rozpracovaný („příprava“), ne volný.
         let inWork: Bool
     }
 }

@@ -111,15 +111,21 @@ final class SchoolWatcher {
 
     private func checkSubstitutions() async -> Bool {
         let service = SubstitutionService(provider: settings.substitutionProviderURL)
-        guard let className = try? await self.service.profile().className,
+        guard let profile = try? await self.service.profile(),
+              let className = profile.className,
               let schedule = try? await service.schedule(for: className) else { return false }
+
+        // Změna jen pro druhou skupinu studenta nezajímá, nemá kvůli ní pípnout telefon.
+        let group = settings.classGroup ?? profile.groupNumber
 
         // Porovnává se otisk nejbližších dnů. Celý obsah ukládat nemusíme,
         // zajímá nás jen jestli se něco pohnulo.
         let digest = schedule.upcoming
             .map { day in
-                let changes = day.changes.map { $0?.text ?? "-" }.joined(separator: ",")
-                return "\(day.date.timeIntervalSince1970)|\(day.isSchoolDay)|\(changes)|\(day.note ?? "")"
+                let changes = day.changes
+                    .map { change in change.flatMap { $0.applies(toGroup: group) ? $0.text : nil } ?? "-" }
+                    .joined(separator: ",")
+                return "\(day.date.timeIntervalSince1970)|\(changes)|\(day.note ?? "")"
             }
             .joined(separator: ";")
 
@@ -195,6 +201,8 @@ final class SchoolWatcher {
 
     private enum Key {
         static let seenNotifications = "watcher.seenNotificationIds"
-        static let substitutionDigest = "watcher.substitutionDigest"
+        // Otisk změnil podobu (bez příznaku dne, jen vlastní skupina) — nový klíč,
+        // ať první kontrola po aktualizaci nehlásí změnu, která žádnou není.
+        static let substitutionDigest = "watcher.substitutionDigest.v2"
     }
 }

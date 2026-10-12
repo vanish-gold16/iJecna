@@ -113,6 +113,13 @@ struct LessonSpot: Identifiable, Hashable, Codable, Sendable {
         lessons(preferringGroup: group).first
     }
 
+    /// Učí se v tomhle bloku daná skupina? Výuka pro celou třídu se týká každého,
+    /// výuka jen pro jinou skupinu ne. Neznámá skupina se týká všeho.
+    func concerns(group: Int?) -> Bool {
+        guard let group else { return true }
+        return lessons.contains { $0.groupNumber == nil || $0.groupNumber == group }
+    }
+
     /// Výuky s vlastní skupinou na prvním místě, jinak v pořadí z webu.
     func lessons(preferringGroup group: Int?) -> [Lesson] {
         guard let group else { return lessons }
@@ -260,6 +267,26 @@ struct Timetable: Hashable, Codable, Sendable {
 
     func period(number: Int) -> LessonPeriod? {
         periods.first { $0.number == number }
+    }
+
+    /// Rozvrh tak, jak ho vidí student z dané skupiny.
+    ///
+    /// Hodina, kterou má jen jiná skupina, se změní na volno — student z druhé
+    /// skupiny v tu dobu ve škole nic nemá. U dělené hodiny, kde se učí obě
+    /// skupiny, zůstanou vidět obě, vlastní jen jde první.
+    func visible(toGroup group: Int?) -> Timetable {
+        guard group != nil else { return self }
+        let days = days.map { day in
+            TimetableDay(weekday: day.weekday, spots: day.spots.flatMap { spot in
+                spot.concerns(group: group) ? [spot] : spot.periodRange.map { LessonSpot.empty(at: $0) }
+            })
+        }
+        return Timetable(periods: periods, days: days)
+    }
+
+    /// Předměty, které třída v rozvrhu má.
+    var subjects: [DisplayName] {
+        Array(Set(days.flatMap(\.spots).flatMap(\.lessons).map(\.subject)))
     }
 
     /// Čísla skupin, na které se třída v rozvrhu dělí.

@@ -75,6 +75,31 @@ final class TimetableParserTests: XCTestCase {
         XCTAssertEqual(spot.lessons(preferringGroup: nil).map(\.group), ["1/2", "2/2"])
     }
 
+    func testHidesLessonsOfOtherGroupOnly() throws {
+        let lesson = { (subject: String, group: String?) in
+            Lesson(subject: DisplayName(subject, short: subject), group: group)
+        }
+        let timetable = Timetable(
+            periods: [],
+            days: [TimetableDay(weekday: .monday, spots: [
+                LessonSpot(startPeriod: 1, lessons: [lesson("M", nil)]),
+                LessonSpot(startPeriod: 2, lessons: [lesson("A", "2/2"), lesson("PSS", "1/2")]),
+                LessonSpot(startPeriod: 3, periodSpan: 2, lessons: [lesson("PSS", "1/2")]),
+            ])]
+        )
+
+        let second = try XCTUnwrap(timetable.visible(toGroup: 2).day(.monday))
+        // Hodina jen první skupiny je pro druhou volno, i přes obě hodiny bloku.
+        XCTAssertEqual(second.lessonSpots.map(\.periodRange), [1...1, 2...2])
+        XCTAssertTrue(try XCTUnwrap(second.spot(atPeriod: 4)).isEmpty)
+        XCTAssertEqual(second.lastOccupiedPeriod, 2)
+        // U dělené hodiny zůstanou obě skupiny, vlastní první.
+        XCTAssertEqual(second.lessonSpots[1].lessons(preferringGroup: 2).map(\.group), ["2/2", "1/2"])
+
+        XCTAssertEqual(timetable.visible(toGroup: 1).day(.monday)?.lessonSpots.count, 3)
+        XCTAssertEqual(timetable.visible(toGroup: nil), timetable)
+    }
+
     func testListsGroupsOfClass() {
         XCTAssertEqual(page.timetable.groupNumbers, [1, 2])
     }

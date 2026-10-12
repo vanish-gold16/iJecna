@@ -48,20 +48,28 @@ struct HatchPattern: View {
     }
 }
 
-/// Poznámka ke dni z mimořádného rozvrhu — ředitelské volno, maturity a podobně.
+/// Poznámka ke dni z mimořádného rozvrhu — maturity, oznámení a podobně.
+///
+/// Samotné změny jsou vidět na kartách hodin, banner nese jen to, co se
+/// k žádné hodině nepřipíchne.
 struct SubstitutionDayBanner: View {
     let day: SubstitutionDay
 
+    private var announcementTexts: [String] {
+        day.announcements.compactMap { $0.textContent?.nilIfEmpty }
+    }
+
     var body: some View {
-        if day.hasAnything, !day.changes.contains(where: { $0 != nil }) || !day.isSchoolDay || day.note != nil {
-            GlassCard(tint: day.isSchoolDay ? .orange : .red) {
+        if day.note != nil || !announcementTexts.isEmpty || day.isInPreparation {
+            GlassCard(tint: .orange) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(
-                        day.isSchoolDay ? "Mimořádný rozvrh" : "Dnes se neučí",
-                        systemImage: day.isSchoolDay ? "arrow.triangle.2.circlepath" : "calendar.badge.exclamationmark"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(day.isSchoolDay ? .orange : .red)
+                    Label("Mimořádný rozvrh", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+
+                    if day.isInPreparation {
+                        SubstitutionPreparationNote()
+                    }
 
                     if let note = day.note {
                         Text(note)
@@ -69,16 +77,25 @@ struct SubstitutionDayBanner: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    ForEach(day.announcements) { announcement in
-                        if let text = announcement.textContent {
-                            Text(text)
-                                .font(.subheadline)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                    ForEach(announcementTexts, id: \.self) { text in
+                        Text(text)
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
         }
+    }
+}
+
+/// Tabulka na den je teprve rozpracovaná. Změny, které vidíš, nemusí být
+/// všechny — škola je během dne doplňuje.
+struct SubstitutionPreparationNote: View {
+    var body: some View {
+        Label("Změny se ještě připravují, můžou přibýt další.", systemImage: "hourglass")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

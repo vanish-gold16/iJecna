@@ -75,7 +75,7 @@ struct HeroLessonCard: View {
             case .failed(let error):
                 GlassCard { compactError(error) }
             case .loaded(let page, _):
-                content(for: page.timetable.moment(group: model.classGroup))
+                content(for: page.timetable.visible(toGroup: model.classGroup).moment(group: model.classGroup))
             }
         }
     }
@@ -343,7 +343,7 @@ struct TodayScheduleSection: View {
                     .font(.subheadline)
             }
 
-            if let page = model.timetable.value, let today, let day = page.timetable.day(today) {
+            if let timetable = model.visibleTimetable, let today, let day = timetable.day(today) {
                 if day.isEmpty {
                     ContentCard {
                         Label("Dnes se neučí", systemImage: "moon.zzz")
@@ -360,9 +360,9 @@ struct TodayScheduleSection: View {
                                 }
                                 CompactLessonRow(
                                     spot: spot,
-                                    periods: page.timetable.periods,
+                                    periods: timetable.periods,
                                     preferredGroup: model.classGroup,
-                                    isCurrent: isCurrent(spot, periods: page.timetable.periods),
+                                    isCurrent: isCurrent(spot, periods: timetable.periods),
                                     tasks: tasks.tasks(
                                         on: Date.startOfSchoolDay(),
                                         periodRange: spot.periodRange
@@ -641,12 +641,10 @@ struct SubstitutionTodaySection: View {
                         .font(.subheadline)
                 }
 
-                GlassCard(tint: today.isSchoolDay ? .orange : .red) {
+                GlassCard(tint: .orange) {
                     VStack(alignment: .leading, spacing: 10) {
-                        if !today.isSchoolDay {
-                            Label("Dnes se neučí", systemImage: "calendar.badge.exclamationmark")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.red)
+                        if today.isInPreparation {
+                            SubstitutionPreparationNote()
                         }
 
                         ForEach(changes(today), id: \.period) { item in

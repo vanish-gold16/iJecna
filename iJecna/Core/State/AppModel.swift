@@ -276,6 +276,11 @@ final class AppModel {
         settings.classGroup ?? profile.value?.groupNumber
     }
 
+    /// Rozvrh bez hodin, které má jen jiná skupina.
+    var visibleTimetable: Timetable? {
+        timetable.value?.timetable.visible(toGroup: classGroup)
+    }
+
     /// Skupiny, ze kterých jde vybírat. Rozvrh je dělí nejčastěji na dvě;
     /// kdyby se objevila třetí, nabídne se taky.
     var availableClassGroups: [Int] {
@@ -343,8 +348,7 @@ final class AppModel {
 
     /// Aktuální nebo nejbližší hodina — pro hlavní obrazovku i pro pruh nad tab barem.
     var currentMoment: LessonMoment? {
-        guard let page = timetable.value else { return nil }
-        return page.timetable.moment(group: classGroup)
+        visibleTimetable?.moment(group: classGroup)
     }
 
     /// Poslední známky napříč předměty, nejnovější první.
