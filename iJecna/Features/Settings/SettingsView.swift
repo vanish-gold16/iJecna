@@ -76,6 +76,19 @@ struct SettingsView: View {
                 """)
             }
 
+            Section {
+                ClassGroupPicker()
+            } header: {
+                Text("Rozvrh")
+            } footer: {
+                Text("""
+                Podle skupiny se u dělených hodin ukazuje tvoje výuka a změny \
+                z mimořádného rozvrhu, které se týkají jen jedné skupiny. Web \
+                školy ji v profilu píše jinak než v rozvrhu a někdy i špatně — \
+                když nesedí, vyber ji tady ručně.
+                """)
+            }
+
             substitutionSection
 
             Section("Známky") {

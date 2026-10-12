@@ -233,7 +233,8 @@ extension MockData {
                 SubstitutionDay(
                     date: today,
                     isSchoolDay: true,
-                    changes: [nil, nil, change("MAT Hor(Kra)+"), nil, change("FYZ 212 Kra(Nov)+"), change("TEV odpadá+"), nil, nil, nil, nil],
+                    // Ve 3. hodině odpadá angličtina jen druhé skupině — přepínač skupiny tak jde vyzkoušet.
+                    changes: [nil, nil, change("2/2 ANJ odpadá+"), change("ZEL 306 Pro(Nov)+"), change("FYZ 212 Kra(Nov)+"), change("TEV odpadá+"), nil, nil, nil, nil],
                     absences: [],
                     note: "Písemná maturitní práce z ČJ v učebnách K7 a 20 od 8:00",
                     announcements: []

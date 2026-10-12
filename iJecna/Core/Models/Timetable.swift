@@ -73,6 +73,19 @@ struct Lesson: Identifiable, Hashable, Codable, Sendable {
         self.classroom = classroom
         self.group = group
     }
+
+    /// Číslo skupiny: „1/2“ je 1, „2/2“ je 2, „S1“ je 1.
+    var groupNumber: Int? { Self.groupNumber(in: group) }
+
+    /// Web píše skupinu na každé stránce jinak — rozvrh „2/2“, profil „A2“ —
+    /// takže se skupiny porovnávají jen podle čísla.
+    static func groupNumber(in label: String?) -> Int? {
+        guard let label else { return nil }
+        if let match = label.firstMatch(of: #/(\d+)\s*/\s*\d+/#) {
+            return Int(match.1)
+        }
+        return label.matches(of: #/\d+/#).last.flatMap { Int($0.output) }
+    }
 }
 
 /// Místo v rozvrhu. Může být prázdné (volná hodina), obsahovat jednu výuku,
@@ -96,9 +109,14 @@ struct LessonSpot: Identifiable, Hashable, Codable, Sendable {
     var periodRange: ClosedRange<Int> { startPeriod...(startPeriod + periodSpan - 1) }
 
     /// Výuka pro zvolenou skupinu, nebo první dostupná.
-    func lesson(preferringGroup group: String?) -> Lesson? {
-        if let group, let match = lessons.first(where: { $0.group == group }) { return match }
-        return lessons.first
+    func lesson(preferringGroup group: Int?) -> Lesson? {
+        lessons(preferringGroup: group).first
+    }
+
+    /// Výuky s vlastní skupinou na prvním místě, jinak v pořadí z webu.
+    func lessons(preferringGroup group: Int?) -> [Lesson] {
+        guard let group else { return lessons }
+        return lessons.filter { $0.groupNumber == group } + lessons.filter { $0.groupNumber != group }
     }
 
     static func empty(at period: Int) -> LessonSpot {
@@ -244,6 +262,11 @@ struct Timetable: Hashable, Codable, Sendable {
         periods.first { $0.number == number }
     }
 
+    /// Čísla skupin, na které se třída v rozvrhu dělí.
+    var groupNumbers: [Int] {
+        Set(days.flatMap(\.spots).flatMap(\.lessons).compactMap(\.groupNumber)).sorted()
+    }
+
     /// Rozsah hodin, který má smysl vykreslit (ořízne prázdné konce týdne).
     var occupiedPeriods: [LessonPeriod] {
         guard let last = days.compactMap(\.lastOccupiedPeriod).max() else { return periods }
@@ -303,7 +326,7 @@ extension Timetable {
     /// Rozlišuje přestávku uvnitř bloku (praxe přes tři hodiny) od skutečné
     /// volné hodiny — jinak by aplikace tvrdila, že praxe „začne za 5 minut“,
     /// i když běží od osmi.
-    func moment(at date: Date = .now, calendar: Calendar = .prague, group: String? = nil) -> LessonMoment {
+    func moment(at date: Date = .now, calendar: Calendar = .prague, group: Int? = nil) -> LessonMoment {
         guard let weekday = Weekday.today(calendar: calendar, date: date),
               let day = day(weekday) else {
             return .weekend

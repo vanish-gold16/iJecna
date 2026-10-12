@@ -109,6 +109,54 @@ final class SubstitutionTests: XCTestCase {
         XCTAssertEqual(day.cancelledCount, 2)
     }
 
+    // MARK: - Skupiny
+
+    func testReadsGroupOfChange() {
+        XCTAssertEqual(change("2/2 IT 17b Ms(Jz)+").groupNumber, 2)
+        XCTAssertEqual(change("1/2 odpadá").groupNumber, 1)
+        // Číslo učebny není skupina.
+        XCTAssertNil(change("C 14 Ja(Mr)+").groupNumber)
+        XCTAssertNil(change("TV He(Lc)+").groupNumber)
+        XCTAssertEqual(change("2/2 IT 17b Ms(Jz)+").textWithoutGroup, "IT 17b Ms(Jz)")
+    }
+
+    func testChangeForOtherGroupDoesNotApply() {
+        let groupChange = change("2/2 odpadá")
+        XCTAssertTrue(groupChange.applies(toGroup: 2))
+        XCTAssertFalse(groupChange.applies(toGroup: 1))
+        // Neznámá skupina: radši ukázat.
+        XCTAssertTrue(groupChange.applies(toGroup: nil))
+        // Změna pro celou třídu platí pro každou skupinu.
+        XCTAssertTrue(change("TV He(Lc)+").applies(toGroup: 1))
+    }
+
+    func testGroupPrefixDoesNotHideCancelledMark() {
+        XCTAssertTrue(change("1/2 -").isCancelled)
+        XCTAssertTrue(change("2/2 odp.").isCancelled)
+    }
+
+    func testLooksUpChangeForOwnGroupOnly() {
+        let day = SubstitutionDay(
+            date: .now,
+            isSchoolDay: true,
+            changes: [change("2/2 odpadá"), change("1/2 odpadá"), change("C 14 Ja(Mr)+")],
+            absences: [], note: nil, announcements: []
+        )
+        XCTAssertNil(day.change(forPeriods: 1...1, group: 1))
+        XCTAssertEqual(day.otherGroupChange(forPeriods: 1...1, group: 1)?.text, "2/2 odpadá")
+        XCTAssertEqual(day.change(forPeriods: 1...2, group: 1)?.text, "1/2 odpadá")
+        XCTAssertEqual(day.change(forPeriods: 3...3, group: 1)?.text, "C 14 Ja(Mr)+")
+        XCTAssertNil(day.otherGroupChange(forPeriods: 1...1, group: nil))
+
+        XCTAssertEqual(day.cancelledCount(forGroup: 1), 1)
+        XCTAssertEqual(day.cancelledCount, 2)
+    }
+
+    func testCollapsesWhitespaceInCellText() {
+        XCTAssertEqual(change("A 1                    Ju(Jr)+").displayText, "A 1 Ju(Jr)")
+        XCTAssertEqual(change("A 16 \nHo(Jr)+").displayText, "A 16 Ho(Jr)")
+    }
+
     private func change(_ text: String) -> SubstitutionChange {
         SubstitutionChange(text: text, backgroundColor: nil, foregroundColor: nil, willBeSpecified: nil)
     }

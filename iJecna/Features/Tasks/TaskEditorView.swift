@@ -223,7 +223,7 @@ struct TaskEditorView: View {
               let weekday = Weekday.from(calendarWeekday: Calendar.prague.component(.weekday, from: draft.dueDate)),
               let day = page.timetable.day(weekday) else { return [] }
 
-        let group = model.profile.value?.primaryGroup
+        let group = model.classGroup
 
         return day.lessonSpots.compactMap { spot in
             guard let lesson = spot.lesson(preferringGroup: group),

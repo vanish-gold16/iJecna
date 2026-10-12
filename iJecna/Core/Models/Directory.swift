@@ -196,10 +196,14 @@ struct Student: Hashable, Codable, Sendable {
             .uppercased()
     }
 
-    /// Skupina používaná k filtrování dělených hodin v rozvrhu.
+    /// První skupina z profilu tak, jak ji web uvádí, např. „A2“.
     var primaryGroup: String? {
         classGroups?.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) }
     }
+
+    /// Číslo skupiny podle profilu. Profil ji bývá uvedenou špatně,
+    /// proto jde v nastavení přepsat — viz `AppModel.classGroup`.
+    var groupNumber: Int? { Lesson.groupNumber(in: primaryGroup) }
 }
 
 struct Locker: Hashable, Codable, Sendable {

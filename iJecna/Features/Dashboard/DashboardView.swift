@@ -75,7 +75,7 @@ struct HeroLessonCard: View {
             case .failed(let error):
                 GlassCard { compactError(error) }
             case .loaded(let page, _):
-                content(for: page.timetable.moment(group: model.profile.value?.primaryGroup))
+                content(for: page.timetable.moment(group: model.classGroup))
             }
         }
     }
@@ -212,7 +212,8 @@ struct HeroLessonCard: View {
     /// hlásila „právě probíhá“ u výuky, která se dnes nekoná.
     private func isCancelled(_ moment: LessonMoment) -> Bool {
         guard let spot = moment.spot else { return false }
-        return model.substitutionDay(on: .now)?.change(forPeriods: spot.periodRange)?.isCancelled == true
+        return model.substitutionDay(on: .now)?
+            .change(forPeriods: spot.periodRange, group: model.classGroup)?.isCancelled == true
     }
 
     private func cancelledHeadline(for moment: LessonMoment) -> String {
@@ -360,14 +361,14 @@ struct TodayScheduleSection: View {
                                 CompactLessonRow(
                                     spot: spot,
                                     periods: page.timetable.periods,
-                                    preferredGroup: model.profile.value?.primaryGroup,
+                                    preferredGroup: model.classGroup,
                                     isCurrent: isCurrent(spot, periods: page.timetable.periods),
                                     tasks: tasks.tasks(
                                         on: Date.startOfSchoolDay(),
                                         periodRange: spot.periodRange
                                     ),
                                     substitution: model.substitutionDay(on: .now)?
-                                        .change(forPeriods: spot.periodRange)
+                                        .change(forPeriods: spot.periodRange, group: model.classGroup)
                                 )
                             }
                         }
@@ -405,7 +406,7 @@ struct TodayScheduleSection: View {
 struct CompactLessonRow: View {
     let spot: LessonSpot
     let periods: [LessonPeriod]
-    var preferredGroup: String?
+    var preferredGroup: Int?
     var isCurrent: Bool = false
     var tasks: [StudyTask] = []
     var substitution: SubstitutionChange?
@@ -649,7 +650,9 @@ struct SubstitutionTodaySection: View {
                         }
 
                         ForEach(changes(today), id: \.period) { item in
-                            let isCancelled = item.change.isCancelled
+                            // Změna jen pro druhou skupinu zůstane vidět, ale tlumeně.
+                            let applies = item.change.applies(toGroup: model.classGroup)
+                            let isCancelled = applies && item.change.isCancelled
                             HStack(spacing: 10) {
                                 Text("\(item.period).")
                                     .font(.subheadline.weight(.bold))
@@ -668,6 +671,7 @@ struct SubstitutionTodaySection: View {
                                 }
                                 Spacer(minLength: 0)
                             }
+                            .opacity(applies ? 1 : 0.45)
                         }
 
                         if let note = today.note {
@@ -693,7 +697,7 @@ struct SubstitutionTodaySection: View {
         let count = changes(day).count
         guard count > 0 else { return nil }
         let all = count == 1 ? "1 změna dnes" : "\(count) změn dnes"
-        let cancelled = day.cancelledCount
+        let cancelled = day.cancelledCount(forGroup: model.classGroup)
         guard cancelled > 0 else { return all }
         return "\(all) • \(cancelled) odpadá"
     }
