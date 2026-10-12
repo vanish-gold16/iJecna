@@ -8,6 +8,10 @@ struct TasksView: View {
     @State private var filter: Filter = .open
     @State private var editedTask: StudyTask?
     @State private var isCreating = false
+    /// Den z kalendáře, na který se má seznam posunout.
+    @State private var scrollTarget: String?
+    /// Prázdný den z kalendáře — nový záznam se na něj rovnou předvyplní.
+    @State private var newTaskDay: NewTaskDay?
     @State private var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
     enum Filter: String, CaseIterable, Identifiable {
@@ -56,6 +60,9 @@ struct TasksView: View {
             .sheet(item: $editedTask) { task in
                 TaskEditorView(task: task, isNew: false)
             }
+            .sheet(item: $newTaskDay) { day in
+                TaskEditorView(newTaskFor: nil, periodNumber: nil, date: day.date, kind: day.kind)
+            }
             .task {
                 authorizationStatus = await store.notificationAuthorizationStatus()
             }
@@ -74,27 +81,51 @@ struct TasksView: View {
     private var content: some View {
         let sections = groupedSections
 
-        if sections.isEmpty {
-            emptyState
-        } else {
+        VStack(spacing: 14) {
+            if filter != .done {
+                TaskCalendarStrip(summary: calendarSummary, onSelect: selectDay)
+            }
+
+            if sections.isEmpty {
+                emptyState
+                    .frame(maxHeight: .infinity)
+            } else {
+                list(sections)
+            }
+        }
+    }
+
+    private func list(_ sections: [TaskSection]) -> some View {
+        ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 18) {
                     if shouldWarnAboutPermission {
                         permissionBanner
                     }
 
-                    ForEach(sections, id: \.title) { section in
+                    ForEach(sections) { section in
                         VStack(alignment: .leading, spacing: 10) {
-                            SectionHeader(section.title, subtitle: section.subtitle)
+                            SectionHeader(title: section.title, subtitle: section.subtitle) {
+                                TaskSummaryChips(summary: DayTaskSummary(tasks: section.tasks))
+                            }
                             ContentCard {
                                 VStack(spacing: 0) {
                                     ForEach(Array(section.tasks.enumerated()), id: \.element.id) { index, task in
                                         if index > 0 { Divider().padding(.leading, 62) }
-                                        taskRow(task)
+                                        taskRow(task, showsDueDate: section.date == nil)
                                     }
                                 }
                             }
+                            .overlay {
+                                // Den s testem dostane oranžový lem, zmeškané červený —
+                                // ať je to vidět i při rychlém projetí.
+                                if let accent = section.accent {
+                                    RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous)
+                                        .strokeBorder(accent.opacity(0.45), lineWidth: 1.5)
+                                }
+                            }
                         }
+                        .id(section.id)
                     }
 
                     if filter == .done && !store.tasks.filter(\.isDone).isEmpty {
@@ -109,14 +140,42 @@ struct TasksView: View {
                 .padding(.bottom, 44)
             }
             .scrollEdgeEffectStyle(.soft, for: .top)
+            .onChange(of: scrollTarget) { _, target in
+                guard let target else { return }
+                withAnimation(.smooth) { proxy.scrollTo(target, anchor: .top) }
+                scrollTarget = nil
+            }
         }
     }
 
-    private func taskRow(_ task: StudyTask) -> some View {
+    // MARK: - Kalendář
+
+    /// V kalendáři se ukazuje totéž, co v seznamu pod ním.
+    private func calendarSummary(_ day: Date) -> DayTaskSummary {
+        let tasks = store.tasks(on: day)
+        return DayTaskSummary(tasks: filter == .tests ? tasks.filter { $0.kind == .test } : tasks)
+    }
+
+    /// Den se záznamy posune seznam na sebe, prázdný den rovnou nabídne nový záznam.
+    private func selectDay(_ day: Date) {
+        if groupedSections.contains(where: { $0.date == day }) {
+            scrollTarget = TaskSection.id(for: day)
+        } else {
+            newTaskDay = NewTaskDay(date: day, kind: filter == .tests ? .test : .homework)
+        }
+    }
+
+    struct NewTaskDay: Identifiable {
+        let date: Date
+        let kind: StudyTaskKind
+        var id: Date { date }
+    }
+
+    private func taskRow(_ task: StudyTask, showsDueDate: Bool = true) -> some View {
         Button {
             editedTask = task
         } label: {
-            TaskRow(task: task) {
+            TaskRow(task: task, showsDueDate: showsDueDate) {
                 withAnimation(.smooth) { store.toggleDone(task) }
                 Haptics.impact(.soft)
             }
@@ -178,10 +237,29 @@ struct TasksView: View {
 
     // MARK: - Řazení do sekcí
 
-    private struct TaskSection {
+    private struct TaskSection: Identifiable {
+        let id: String
         let title: String
         let subtitle: String?
         let tasks: [StudyTask]
+        /// Den, ke kterému sekce patří. `nil` u souhrnných sekcí (po termínu, splněné).
+        var date: Date? = nil
+
+        static func id(for day: Date) -> String { "day-\(day.timeIntervalSince1970)" }
+
+        var accent: Color? {
+            if id == "overdue" { return .red }
+            guard date != nil, tasks.contains(where: { $0.kind == .test && !$0.isDone }) else { return nil }
+            return .orange
+        }
+    }
+
+    private func overdueSubtitle(_ count: Int) -> String {
+        switch count {
+        case 1: "1 nesplněný"
+        case 2...4: "\(count) nesplněné"
+        default: "\(count) nesplněných"
+        }
     }
 
     private var groupedSections: [TaskSection] {
@@ -190,41 +268,50 @@ struct TasksView: View {
             let done = store.tasks
                 .filter(\.isDone)
                 .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-            return done.isEmpty ? [] : [TaskSection(title: "Splněné", subtitle: "\(done.count) záznamů", tasks: done)]
+            return done.isEmpty ? [] : [TaskSection(id: "done", title: "Splněné", subtitle: "\(done.count) záznamů", tasks: done)]
 
         case .tests:
-            let tests = store.upcomingTests
-            return tests.isEmpty ? [] : [TaskSection(title: "Nadcházející testy", subtitle: nil, tasks: tests)]
+            return daySections(for: store.upcomingTests)
 
         case .open:
             var sections: [TaskSection] = []
 
             let overdue = store.overdue
             if !overdue.isEmpty {
-                sections.append(TaskSection(title: "Po termínu", subtitle: "\(overdue.count) nesplněných", tasks: overdue))
+                sections.append(TaskSection(id: "overdue", title: "Po termínu", subtitle: overdueSubtitle(overdue.count), tasks: overdue))
             }
 
-            let today = store.dueToday
-            if !today.isEmpty {
-                sections.append(TaskSection(title: "Dnes", subtitle: nil, tasks: today))
-            }
+            let upcoming = store.tasks.filter { !$0.isDone && $0.daysUntilDue() >= 0 }
+            return sections + daySections(for: upcoming)
+        }
+    }
 
-            let open = store.tasks.filter { !$0.isDone }
-            let thisWeek = open
-                .filter { (1...7).contains($0.daysUntilDue()) }
-                .sorted { ($0.dueDate, $0.periodNumber ?? Int.max) < ($1.dueDate, $1.periodNumber ?? Int.max) }
-            if !thisWeek.isEmpty {
-                sections.append(TaskSection(title: "Nejbližších sedm dní", subtitle: nil, tasks: thisWeek))
+    /// Každý den vlastní sekce — „Zítra“, „Čtvrtek“ — ať je hned jasné,
+    /// na kdy co je, a ne jen „za 3 dny“ u každého řádku.
+    private func daySections(for tasks: [StudyTask]) -> [TaskSection] {
+        Dictionary(grouping: tasks, by: \.dueDate)
+            .sorted { $0.key < $1.key }
+            .map { day, tasks in
+                TaskSection(
+                    id: TaskSection.id(for: day),
+                    title: day.relativeDayName(),
+                    subtitle: daySubtitle(day),
+                    tasks: tasks.sorted { ($0.periodNumber ?? Int.max, $0.createdAt) < ($1.periodNumber ?? Int.max, $1.createdAt) },
+                    date: day
+                )
             }
+    }
 
-            let later = open
-                .filter { $0.daysUntilDue() > 7 }
-                .sorted { $0.dueDate < $1.dueDate }
-            if !later.isEmpty {
-                sections.append(TaskSection(title: "Později", subtitle: nil, tasks: later))
-            }
-
-            return sections
+    /// „úterý 13. 10.“ u dneška a zítřka, jinak „15. 10. • za 3 dny“.
+    private func daySubtitle(_ day: Date) -> String {
+        let days = day.schoolDaysFromToday()
+        let date = DateFormatter.jecnaDayMonth.string(from: day)
+        switch days {
+        case 0, 1:
+            return DateFormatter.jecnaWeekdayLong.string(from: day)
+        default:
+            let distance = days < 5 ? "za \(days) dny" : "za \(days) dnů"
+            return day.isInNextWeek() ? "\(date) • příští týden • \(distance)" : "\(date) • \(distance)"
         }
     }
 }

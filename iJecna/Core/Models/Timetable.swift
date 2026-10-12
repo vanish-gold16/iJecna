@@ -450,6 +450,15 @@ extension DateFormatter {
         return formatter
     }()
 
+    static let jecnaWeekday: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = .prague
+        formatter.locale = Locale(identifier: "cs_CZ")
+        formatter.timeZone = Calendar.prague.timeZone
+        formatter.dateFormat = "EEEE"
+        return formatter
+    }()
+
     static let jecnaWeekdayLong: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = .prague
