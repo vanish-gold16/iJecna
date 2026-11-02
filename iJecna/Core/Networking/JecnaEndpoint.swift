@@ -95,5 +95,8 @@ enum JecnaEndpoint {
 
 extension JecnaEndpoint {
     /// Oficiální adresa školy.
-    static let officialBase = URL(string: "https://www.spsejecna.cz")!
+    ///
+    /// Bez `www`: web z něj posílá 301 na holou doménu a klient přesměrování
+    /// záměrně nenásleduje, takže by nedostal ani přihlašovací formulář.
+    static let officialBase = URL(string: "https://spsejecna.cz")!
 }
