@@ -28,6 +28,25 @@ enum StudyTaskKind: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Počet slovy se správným tvarem: „1 test“, „3 testy“, „5 testů“.
+    func countLabel(_ count: Int) -> String {
+        let forms: (one: String, few: String, many: String) = switch self {
+        case .homework: ("úkol", "úkoly", "úkolů")
+        case .test: ("test", "testy", "testů")
+        case .project: ("projekt", "projekty", "projektů")
+        case .note: ("poznámka", "poznámky", "poznámek")
+        }
+        let word = switch count {
+        case 1: forms.one
+        case 2...4: forms.few
+        default: forms.many
+        }
+        return "\(count) \(word)"
+    }
+
+    /// Pořadí podle důležitosti — test se nesmí ztratit za poznámkou.
+    static let byImportance: [StudyTaskKind] = [.test, .project, .homework, .note]
+
     /// Testy chceme připomenout s předstihem, úkoly stačí večer předtím.
     var defaultReminder: ReminderPreset {
         switch self {
@@ -189,9 +208,78 @@ struct StudyTask: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// Co student na daný den má nesplněného. Podklad pro tečky u dnů
+/// a souhrn v nadpisech — aby šlo na první pohled poznat, kdy je test.
+struct DayTaskSummary: Hashable, Sendable {
+    private let counts: [StudyTaskKind: Int]
+
+    init(tasks: [StudyTask]) {
+        counts = tasks.filter { !$0.isDone }.reduce(into: [:]) { $0[$1.kind, default: 0] += 1 }
+    }
+
+    func count(of kind: StudyTaskKind) -> Int { counts[kind] ?? 0 }
+
+    var total: Int { counts.values.reduce(0, +) }
+    var isEmpty: Bool { total == 0 }
+    var hasTest: Bool { count(of: .test) > 0 }
+
+    /// Druhy, které ten den jsou, od nejdůležitějšího.
+    var kinds: [StudyTaskKind] { StudyTaskKind.byImportance.filter { count(of: $0) > 0 } }
+
+    /// „1 test, 2 úkoly“ — pro VoiceOver a popisky.
+    var description: String {
+        isEmpty ? "nic" : kinds.map { $0.countLabel(count(of: $0)) }.joined(separator: ", ")
+    }
+}
+
 extension Date {
     /// Začátek dne v pražském čase. Školní den se řídí školou, ne nastavením telefonu.
     static func startOfSchoolDay(_ date: Date = .now, calendar: Calendar = .prague) -> Date {
         calendar.startOfDay(for: date)
+    }
+
+    /// O kolik dní je tenhle den od dneška (zítra = 1, včera = −1).
+    func schoolDaysFromToday(now: Date = .now, calendar: Calendar = .prague) -> Int {
+        calendar.dateComponents(
+            [.day],
+            from: Date.startOfSchoolDay(now, calendar: calendar),
+            to: Date.startOfSchoolDay(self, calendar: calendar)
+        ).day ?? 0
+    }
+
+    /// „Dnes“, „Zítra“, „Včera“, jinak název dne („Čtvrtek“).
+    func relativeDayName(now: Date = .now, calendar: Calendar = .prague) -> String {
+        switch schoolDaysFromToday(now: now, calendar: calendar) {
+        case 0: "Dnes"
+        case 1: "Zítra"
+        case -1: "Včera"
+        default: DateFormatter.jecnaWeekday.string(from: self).capitalizedFirst
+        }
+    }
+
+    /// Patří den do příštího týdne? V rozvrhu se pak hodí dopsat „příští týden“,
+    /// jinak by se ve čtvrtek pondělí četlo jako to, které už bylo.
+    func isInNextWeek(now: Date = .now, calendar: Calendar = .prague) -> Bool {
+        guard let nextWeek = calendar.date(byAdding: .weekOfYear, value: 1, to: now) else { return false }
+        return calendar.isDate(self, equalTo: nextWeek, toGranularity: .weekOfYear)
+    }
+
+    /// Den v měsíci, „12.“
+    func dayOfMonthLabel(calendar: Calendar = .prague) -> String {
+        "\(calendar.component(.day, from: self))."
+    }
+
+    /// Dvoupísmenná zkratka dne včetně víkendu: „Po“ … „Ne“.
+    func shortWeekdayName(calendar: Calendar = .prague) -> String {
+        let weekday = calendar.component(.weekday, from: self)
+        if let schoolDay = Weekday.from(calendarWeekday: weekday) { return schoolDay.shortName }
+        return weekday == 1 ? "Ne" : "So"
+    }
+}
+
+extension String {
+    var capitalizedFirst: String {
+        guard let first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }

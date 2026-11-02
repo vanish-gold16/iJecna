@@ -69,7 +69,50 @@ final class TimetableParserTests: XCTestCase {
         XCTAssertEqual(spot.lessons.map(\.teacherTag), ["BC", "RE"])
         XCTAssertEqual(Set(spot.lessons.map(\.subject.short)), ["DS"])
 
-        XCTAssertEqual(spot.lesson(preferringGroup: "2/2")?.classroom, "18b")
+        XCTAssertEqual(spot.lesson(preferringGroup: 2)?.classroom, "18b")
+        XCTAssertEqual(spot.lessons(preferringGroup: 2).map(\.group), ["2/2", "1/2"])
+        // Neznámá skupina nesmí pořadí z webu přeházet.
+        XCTAssertEqual(spot.lessons(preferringGroup: nil).map(\.group), ["1/2", "2/2"])
+    }
+
+    func testHidesLessonsOfOtherGroupOnly() throws {
+        let lesson = { (subject: String, group: String?) in
+            Lesson(subject: DisplayName(subject, short: subject), group: group)
+        }
+        let timetable = Timetable(
+            periods: [],
+            days: [TimetableDay(weekday: .monday, spots: [
+                LessonSpot(startPeriod: 1, lessons: [lesson("M", nil)]),
+                LessonSpot(startPeriod: 2, lessons: [lesson("A", "2/2"), lesson("PSS", "1/2")]),
+                LessonSpot(startPeriod: 3, periodSpan: 2, lessons: [lesson("PSS", "1/2")]),
+            ])]
+        )
+
+        let second = try XCTUnwrap(timetable.visible(toGroup: 2).day(.monday))
+        // Hodina jen první skupiny je pro druhou volno, i přes obě hodiny bloku.
+        XCTAssertEqual(second.lessonSpots.map(\.periodRange), [1...1, 2...2])
+        XCTAssertTrue(try XCTUnwrap(second.spot(atPeriod: 4)).isEmpty)
+        XCTAssertEqual(second.lastOccupiedPeriod, 2)
+        // U dělené hodiny zůstanou obě skupiny, vlastní první.
+        XCTAssertEqual(second.lessonSpots[1].lessons(preferringGroup: 2).map(\.group), ["2/2", "1/2"])
+
+        XCTAssertEqual(timetable.visible(toGroup: 1).day(.monday)?.lessonSpots.count, 3)
+        XCTAssertEqual(timetable.visible(toGroup: nil), timetable)
+    }
+
+    func testListsGroupsOfClass() {
+        XCTAssertEqual(page.timetable.groupNumbers, [1, 2])
+    }
+
+    func testReadsGroupNumberFromAnyLabel() {
+        // Rozvrh píše „1/2“, profil „A2“, maketa „S1“ — porovnává se jen číslo.
+        XCTAssertEqual(Lesson.groupNumber(in: "1/2"), 1)
+        XCTAssertEqual(Lesson.groupNumber(in: "2/2"), 2)
+        XCTAssertEqual(Lesson.groupNumber(in: "2 / 3"), 2)
+        XCTAssertEqual(Lesson.groupNumber(in: "A2"), 2)
+        XCTAssertEqual(Lesson.groupNumber(in: "S1"), 1)
+        XCTAssertNil(Lesson.groupNumber(in: "TV"))
+        XCTAssertNil(Lesson.groupNumber(in: nil))
     }
 
     // MARK: - Slučování do bloků
@@ -181,5 +224,45 @@ final class TimetableVariantTests: XCTestCase {
         let page = try TimetablePageParser.parse(Fixture.timetable.html())
         let option = try XCTUnwrap(page.periodOptions.first)
         XCTAssertEqual(option.shortName, "Dočasný rozvrh září 2026")
+    }
+}
+
+/// Ručně zvolená skupina — profil na webu ji uvádí špatně, volba musí vydržet
+/// restart a mít přednost.
+@MainActor
+final class ClassGroupSettingsTests: XCTestCase {
+
+    private var defaults: UserDefaults!
+    private var suiteName: String!
+
+    override func setUpWithError() throws {
+        suiteName = "ClassGroupSettingsTests-\(UUID().uuidString)"
+        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    }
+
+    override func tearDownWithError() throws {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    func testRemembersChosenGroup() {
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertNil(settings.classGroup)
+
+        settings.classGroup = 2
+        XCTAssertEqual(AppSettings(defaults: defaults).classGroup, 2)
+
+        settings.classGroup = nil
+        XCTAssertNil(AppSettings(defaults: defaults).classGroup)
+    }
+
+    func testChosenGroupWinsOverProfile() {
+        let model = AppModel(service: MockJecnaService())
+        model.settings = AppSettings(defaults: defaults)
+        // Maketa má v profilu „S1, 1/2“.
+        model.profile = .loaded(MockData.student)
+        XCTAssertEqual(model.classGroup, 1)
+
+        model.settings.classGroup = 2
+        XCTAssertEqual(model.classGroup, 2)
     }
 }

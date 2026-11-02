@@ -93,6 +93,8 @@ extension MockData {
                 spot(3, lesson("Český jazyk a literatura", "CJL", teacher: "Cer", room: "306")),
                 spot(4, lesson("Základy elektrotechniky", "ZEL", teacher: "Nov", room: "410")),
                 spot(5, lesson("Dějepis", "DEJ", teacher: "Ben", room: "301")),
+                // Jen pro první skupinu — druhá má v tu dobu volno.
+                spot(6, lesson("Programové vybavení", "PVY", teacher: "Dvo", room: "Lab 217", group: "S1")),
             ]),
         ]
     }
@@ -232,18 +234,21 @@ extension MockData {
             days: [
                 SubstitutionDay(
                     date: today,
-                    isSchoolDay: true,
-                    changes: [nil, nil, change("MAT Hor(Kra)+"), nil, change("FYZ 212 Kra(Nov)+"), change("TEV odpadá+"), nil, nil, nil, nil],
+                    isInPreparation: false,
+                    // Ve 3. hodině odpadá angličtina jen druhé skupině — přepínač skupiny tak jde vyzkoušet.
+                    // Matematika v 7. hodině v řádném rozvrhu není, ukáže se jako hodina navíc.
+                    changes: [nil, nil, change("2/2 ANJ odpadá+"), change("ZEL 306 Pro(Nov)+"), change("FYZ 212 Kra(Nov)+"), change("TEV odpadá+"), change("MAT 306 Hor(Kra)+"), nil, nil, nil],
                     absences: [],
                     note: "Písemná maturitní práce z ČJ v učebnách K7 a 20 od 8:00",
                     announcements: []
                 ),
                 SubstitutionDay(
                     date: tomorrow,
-                    isSchoolDay: false,
-                    changes: [],
+                    // Zítřek se v tabulce teprve chystá, změna ještě není potvrzená.
+                    isInPreparation: true,
+                    changes: [nil, nil, change("MAT 306 Ben(Hor)")],
                     absences: [],
-                    note: "Ředitelské volno",
+                    note: nil,
                     announcements: []
                 ),
             ]

@@ -268,6 +268,26 @@ final class AppModel {
         }
     }
 
+    /// Skupina, podle které se ukazují dělené hodiny a změny jen pro část třídy.
+    ///
+    /// Ruční volba má přednost: profil na webu píše skupinu jinak než rozvrh
+    /// a bývá v něm i špatně.
+    var classGroup: Int? {
+        settings.classGroup ?? profile.value?.groupNumber
+    }
+
+    /// Rozvrh bez hodin, které má jen jiná skupina.
+    var visibleTimetable: Timetable? {
+        timetable.value?.timetable.visible(toGroup: classGroup)
+    }
+
+    /// Skupiny, ze kterých jde vybírat. Rozvrh je dělí nejčastěji na dvě;
+    /// kdyby se objevila třetí, nabídne se taky.
+    var availableClassGroups: [Int] {
+        let found = timetable.value?.timetable.groupNumbers ?? []
+        return Set([1, 2] + found.filter { (1...4).contains($0) }).sorted()
+    }
+
     /// Změny pro daný den, pokud je funkce zapnutá a data dorazila.
     func substitutionDay(on date: Date) -> SubstitutionDay? {
         guard settings.substitutionsEnabled else { return nil }
@@ -328,8 +348,7 @@ final class AppModel {
 
     /// Aktuální nebo nejbližší hodina — pro hlavní obrazovku i pro pruh nad tab barem.
     var currentMoment: LessonMoment? {
-        guard let page = timetable.value else { return nil }
-        return page.timetable.moment(group: profile.value?.primaryGroup)
+        visibleTimetable?.moment(group: classGroup)
     }
 
     /// Poslední známky napříč předměty, nejnovější první.
@@ -398,6 +417,9 @@ final class AppSettings {
     /// Vlastní adresa poskytovatele; prázdná znamená výchozí.
     var substitutionProvider: String { didSet { save() } }
 
+    /// Skupina zvolená ručně. `nil` = podle profilu na webu.
+    var classGroup: Int? { didSet { save() } }
+
     /// Jen pro maketu, neukládá se.
     @ObservationIgnored var simulatedFailure: MockJecnaService.FailureMode = .none
 
@@ -418,6 +440,9 @@ final class AppSettings {
         showNSymbolInAverages = defaults.bool(forKey: Key.showN, default: false)
         substitutionsEnabled = defaults.bool(forKey: Key.substitutionsEnabled, default: true)
         substitutionProvider = defaults.string(forKey: Key.substitutionProvider) ?? ""
+        // `integer(forKey:)` vrací pro nenastavený klíč nulu, ta znamená „podle profilu“.
+        let storedGroup = defaults.integer(forKey: Key.classGroup)
+        classGroup = storedGroup > 0 ? storedGroup : nil
 
         isLoading = false
     }
@@ -446,6 +471,7 @@ final class AppSettings {
         defaults.set(showNSymbolInAverages, forKey: Key.showN)
         defaults.set(substitutionsEnabled, forKey: Key.substitutionsEnabled)
         defaults.set(substitutionProvider, forKey: Key.substitutionProvider)
+        defaults.set(classGroup ?? 0, forKey: Key.classGroup)
     }
 
     private enum Key {
@@ -459,6 +485,7 @@ final class AppSettings {
         static let showN = "settings.showNSymbolInAverages"
         static let substitutionsEnabled = "settings.substitutionsEnabled"
         static let substitutionProvider = "settings.substitutionProvider"
+        static let classGroup = "settings.classGroup"
     }
 }
 

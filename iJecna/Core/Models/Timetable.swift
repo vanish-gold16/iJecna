@@ -73,6 +73,19 @@ struct Lesson: Identifiable, Hashable, Codable, Sendable {
         self.classroom = classroom
         self.group = group
     }
+
+    /// Číslo skupiny: „1/2“ je 1, „2/2“ je 2, „S1“ je 1.
+    var groupNumber: Int? { Self.groupNumber(in: group) }
+
+    /// Web píše skupinu na každé stránce jinak — rozvrh „2/2“, profil „A2“ —
+    /// takže se skupiny porovnávají jen podle čísla.
+    static func groupNumber(in label: String?) -> Int? {
+        guard let label else { return nil }
+        if let match = label.firstMatch(of: #/(\d+)\s*/\s*\d+/#) {
+            return Int(match.1)
+        }
+        return label.matches(of: #/\d+/#).last.flatMap { Int($0.output) }
+    }
 }
 
 /// Místo v rozvrhu. Může být prázdné (volná hodina), obsahovat jednu výuku,
@@ -96,9 +109,21 @@ struct LessonSpot: Identifiable, Hashable, Codable, Sendable {
     var periodRange: ClosedRange<Int> { startPeriod...(startPeriod + periodSpan - 1) }
 
     /// Výuka pro zvolenou skupinu, nebo první dostupná.
-    func lesson(preferringGroup group: String?) -> Lesson? {
-        if let group, let match = lessons.first(where: { $0.group == group }) { return match }
-        return lessons.first
+    func lesson(preferringGroup group: Int?) -> Lesson? {
+        lessons(preferringGroup: group).first
+    }
+
+    /// Učí se v tomhle bloku daná skupina? Výuka pro celou třídu se týká každého,
+    /// výuka jen pro jinou skupinu ne. Neznámá skupina se týká všeho.
+    func concerns(group: Int?) -> Bool {
+        guard let group else { return true }
+        return lessons.contains { $0.groupNumber == nil || $0.groupNumber == group }
+    }
+
+    /// Výuky s vlastní skupinou na prvním místě, jinak v pořadí z webu.
+    func lessons(preferringGroup group: Int?) -> [Lesson] {
+        guard let group else { return lessons }
+        return lessons.filter { $0.groupNumber == group } + lessons.filter { $0.groupNumber != group }
     }
 
     static func empty(at period: Int) -> LessonSpot {
@@ -244,6 +269,31 @@ struct Timetable: Hashable, Codable, Sendable {
         periods.first { $0.number == number }
     }
 
+    /// Rozvrh tak, jak ho vidí student z dané skupiny.
+    ///
+    /// Hodina, kterou má jen jiná skupina, se změní na volno — student z druhé
+    /// skupiny v tu dobu ve škole nic nemá. U dělené hodiny, kde se učí obě
+    /// skupiny, zůstanou vidět obě, vlastní jen jde první.
+    func visible(toGroup group: Int?) -> Timetable {
+        guard group != nil else { return self }
+        let days = days.map { day in
+            TimetableDay(weekday: day.weekday, spots: day.spots.flatMap { spot in
+                spot.concerns(group: group) ? [spot] : spot.periodRange.map { LessonSpot.empty(at: $0) }
+            })
+        }
+        return Timetable(periods: periods, days: days)
+    }
+
+    /// Předměty, které třída v rozvrhu má.
+    var subjects: [DisplayName] {
+        Array(Set(days.flatMap(\.spots).flatMap(\.lessons).map(\.subject)))
+    }
+
+    /// Čísla skupin, na které se třída v rozvrhu dělí.
+    var groupNumbers: [Int] {
+        Set(days.flatMap(\.spots).flatMap(\.lessons).compactMap(\.groupNumber)).sorted()
+    }
+
     /// Rozsah hodin, který má smysl vykreslit (ořízne prázdné konce týdne).
     var occupiedPeriods: [LessonPeriod] {
         guard let last = days.compactMap(\.lastOccupiedPeriod).max() else { return periods }
@@ -303,7 +353,7 @@ extension Timetable {
     /// Rozlišuje přestávku uvnitř bloku (praxe přes tři hodiny) od skutečné
     /// volné hodiny — jinak by aplikace tvrdila, že praxe „začne za 5 minut“,
     /// i když běží od osmi.
-    func moment(at date: Date = .now, calendar: Calendar = .prague, group: String? = nil) -> LessonMoment {
+    func moment(at date: Date = .now, calendar: Calendar = .prague, group: Int? = nil) -> LessonMoment {
         guard let weekday = Weekday.today(calendar: calendar, date: date),
               let day = day(weekday) else {
             return .weekend
@@ -397,6 +447,15 @@ extension DateFormatter {
         formatter.locale = Locale(identifier: "cs_CZ")
         formatter.timeZone = Calendar.prague.timeZone
         formatter.setLocalizedDateFormatFromTemplate("d. M.")
+        return formatter
+    }()
+
+    static let jecnaWeekday: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = .prague
+        formatter.locale = Locale(identifier: "cs_CZ")
+        formatter.timeZone = Calendar.prague.timeZone
+        formatter.dateFormat = "EEEE"
         return formatter
     }()
 

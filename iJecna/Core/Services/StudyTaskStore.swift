@@ -44,6 +44,11 @@ final class StudyTaskStore {
             }
     }
 
+    /// Co je na daný den nesplněného, po druzích.
+    func summary(on date: Date) -> DayTaskSummary {
+        DayTaskSummary(tasks: tasks(on: date))
+    }
+
     /// Záznamy navázané na konkrétní hodinu daného dne.
     func tasks(on date: Date, periodNumber: Int) -> [StudyTask] {
         tasks(on: date).filter { $0.periodNumber == periodNumber }

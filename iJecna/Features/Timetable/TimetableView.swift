@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TimetableView: View {
     @Environment(AppModel.self) private var model
+    @Environment(StudyTaskStore.self) private var tasks
     @State private var selectedDay: Weekday = Weekday.today() ?? .monday
     @State private var layout: Layout = .day
     @Namespace private var dayNamespace
@@ -35,6 +36,11 @@ struct TimetableView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 130)
+                }
+                if let page = model.timetable.value, !page.timetable.groupNumbers.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        classGroupMenu
+                    }
                 }
                 if let page = model.timetable.value, !page.periodOptions.isEmpty {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -71,11 +77,13 @@ struct TimetableView: View {
                 Task { await model.loadTimetable(force: true) }
             }
         case .loaded(let page, _):
+            // Hodiny jen pro druhou skupinu se v rozvrhu vůbec neukážou.
+            let timetable = page.timetable.visible(toGroup: model.classGroup)
             switch layout {
-            case .day: dayLayout(page)
+            case .day: dayLayout(timetable)
             case .week: WeekGridView(
-                page: page,
-                preferredGroup: model.profile.value?.primaryGroup,
+                timetable: timetable,
+                preferredGroup: model.classGroup,
                 substitutions: substitutionsByDay
             )
             }
@@ -91,16 +99,17 @@ struct TimetableView: View {
 
     // MARK: - Denní zobrazení
 
-    private func dayLayout(_ page: TimetablePage) -> some View {
+    private func dayLayout(_ timetable: Timetable) -> some View {
         VStack(spacing: 0) {
             dayPicker
 
             TabView(selection: $selectedDay) {
                 ForEach(Weekday.allCases) { weekday in
                     DayScheduleList(
-                        day: page.timetable.day(weekday),
-                        periods: page.timetable.periods,
-                        preferredGroup: model.profile.value?.primaryGroup,
+                        day: timetable.day(weekday),
+                        periods: timetable.periods,
+                        subjects: timetable.subjects,
+                        preferredGroup: model.classGroup,
                         isToday: weekday == Weekday.today(),
                         substitutions: model.substitutionDay(on: weekday.nextOccurrence())
                     )
@@ -112,30 +121,39 @@ struct TimetableView: View {
         .refreshable { await model.loadTimetable(force: true) }
     }
 
-    /// Přepínač dnů. Dnešek je zvýrazněn i když je vybraný jiný den.
+    /// Přepínač dnů. U každého dne je datum, ke kterému se vztahuje, a tečky
+    /// za úkoly a testy — bez otevírání dne je vidět, kdy se píše test.
+    /// Dnešek má datum v barvě aplikace, i když je vybraný jiný den.
     private var dayPicker: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
                 ForEach(Weekday.allCases) { weekday in
                     let isSelected = weekday == selectedDay
                     let isToday = weekday == Weekday.today()
+                    let date = weekday.nextOccurrence()
+                    let summary = tasks.summary(on: date)
 
                     Button {
                         withAnimation(.smooth(duration: 0.28)) { selectedDay = weekday }
                         Haptics.selection()
                     } label: {
-                        VStack(spacing: 3) {
+                        VStack(spacing: 2) {
                             Text(weekday.shortName)
                                 .font(.subheadline.weight(isSelected ? .bold : .medium))
-                            Circle()
-                                .fill(isToday ? Theme.accent : .clear)
-                                .frame(width: 4, height: 4)
+                            Text(date.dayOfMonthLabel())
+                                .font(.caption2.weight(isToday ? .bold : .regular))
+                                .monospacedDigit()
+                                .foregroundStyle(dateStyle(isSelected: isSelected, isToday: isToday))
+                            TaskDayDots(summary: summary, onAccent: isSelected)
+                                .padding(.top, 1)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 7)
                         .foregroundStyle(isSelected ? Color.white : .primary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(weekday.fullName) \(date.dayOfMonthLabel())")
+                    .accessibilityValue(summary.isEmpty ? "" : summary.description)
                     .background {
                         if isSelected {
                             Capsule()
@@ -150,6 +168,12 @@ struct TimetableView: View {
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 12)
+    }
+
+    private func dateStyle(isSelected: Bool, isToday: Bool) -> AnyShapeStyle {
+        if isSelected { AnyShapeStyle(.white.opacity(0.85)) }
+        else if isToday { AnyShapeStyle(Theme.accent) }
+        else { AnyShapeStyle(.secondary) }
     }
 
     /// Přepínač variant rozvrhu — řádný, dočasný, mimořádný.
@@ -173,6 +197,50 @@ struct TimetableView: View {
         }
         .accessibilityLabel("Varianta rozvrhu")
     }
+
+    /// Rychlé přepnutí skupiny přímo z rozvrhu — tady je hned vidět,
+    /// jestli dělené hodiny sedí.
+    private var classGroupMenu: some View {
+        Menu {
+            Section("Moje skupina") {
+                ClassGroupPicker()
+            }
+        } label: {
+            Image(systemName: "person.2")
+        }
+        .accessibilityLabel("Moje skupina")
+    }
+}
+
+/// Výběr vlastní skupiny u dělených hodin.
+///
+/// Profil na webu ji píše jinak než rozvrh („A2“ proti „1/2“) a bývá v něm
+/// i špatně, proto si ji student může nastavit sám.
+struct ClassGroupPicker: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var settings = model.settings
+
+        Picker("Moje skupina", selection: $settings.classGroup) {
+            Text(automaticTitle).tag(Int?.none)
+            ForEach(options, id: \.self) { group in
+                Text("\(group). skupina").tag(Optional(group))
+            }
+        }
+    }
+
+    /// Nabízené skupiny včetně té uložené, i kdyby ji rozvrh zrovna neměl.
+    private var options: [Int] {
+        Set(model.availableClassGroups + [model.settings.classGroup].compactMap { $0 }).sorted()
+    }
+
+    /// U volby „podle profilu“ je vidět, co profil tvrdí — student hned pozná,
+    /// jestli web uvádí jeho skupinu správně.
+    private var automaticTitle: String {
+        guard let label = model.profile.value?.primaryGroup else { return "Podle profilu" }
+        return "Podle profilu (\(label))"
+    }
 }
 
 // MARK: - Seznam hodin pro jeden den
@@ -180,7 +248,9 @@ struct TimetableView: View {
 struct DayScheduleList: View {
     let day: TimetableDay?
     let periods: [LessonPeriod]
-    var preferredGroup: String?
+    /// Předměty třídy — podle nich se pojmenuje hodina navíc ze suplování.
+    var subjects: [DisplayName] = []
+    var preferredGroup: Int?
     var isToday: Bool
     /// Změny z mimořádného rozvrhu pro tenhle den, pokud nějaké jsou.
     var substitutions: SubstitutionDay?
@@ -188,29 +258,70 @@ struct DayScheduleList: View {
     @Environment(StudyTaskStore.self) private var tasks
     @State private var newTask: NewTaskContext?
     @State private var detailSpot: LessonSpot?
+    @State private var editedTask: StudyTask?
 
     /// Datum, ke kterému se úkoly z tohohle dne přiřadí.
     private var date: Date {
         day?.weekday.nextOccurrence() ?? Date.startOfSchoolDay()
     }
 
+    /// Hodiny z rozvrhu a hodiny navíc z mimořádného rozvrhu, jak jdou za sebou.
+    private var items: [ScheduleItem] {
+        let lessons = (day?.lessonSpots ?? []).map(ScheduleItem.lesson)
+        let extras = (substitutions?.extraLessons(outside: day, group: preferredGroup) ?? []).map(ScheduleItem.extra)
+        return (lessons + extras).sorted { $0.startPeriod < $1.startPeriod }
+    }
+
+    private var weekdayNumber: Int { day?.weekday.rawValue ?? 0 }
+
+    /// Záznamy na tenhle den, které nejsou u žádné hodiny — bez čísla hodiny,
+    /// nebo s hodinou, která v rozvrhu není (změna rozvrhu, jiná skupina).
+    /// Bez tohohle by v rozvrhu nebyly vidět vůbec.
+    private var unplacedTasks: [StudyTask] {
+        let covered = Set((day?.lessonSpots ?? []).flatMap { Array($0.periodRange) })
+        return tasks.tasks(on: date).filter { task in
+            guard let period = task.periodNumber else { return true }
+            return !covered.contains(period)
+        }
+    }
+
     var body: some View {
         ScrollView {
-            if let day, !day.isEmpty {
-                VStack(spacing: 10) {
-                    if let substitutions {
-                        SubstitutionDayBanner(day: substitutions)
-                            .padding(.bottom, 2)
-                    }
+            VStack(spacing: 10) {
+                dayHeader
 
-                    ForEach(day.lessonSpots) { spot in
+                if let substitutions {
+                    SubstitutionDayBanner(day: substitutions)
+                        .padding(.bottom, 2)
+                }
+
+                if !unplacedTasks.isEmpty {
+                    unplacedTasksCard
+                }
+
+                if items.isEmpty {
+                    EmptyStateView(
+                        symbol: "moon.zzz",
+                        title: "Volný den",
+                        message: "Tenhle den nemáš v rozvrhu žádnou výuku."
+                    )
+                    .padding(.top, 60)
+                }
+
+                ForEach(items) { item in
+                    switch item {
+                    case .lesson(let spot):
                         LessonCard(
                             spot: spot,
                             periods: periods,
                             preferredGroup: preferredGroup,
                             isCurrent: isToday && isOngoing(spot),
                             tasks: tasks.tasks(on: date, periodRange: spot.periodRange),
-                            substitution: substitutions?.change(forPeriods: spot.periodRange),
+                            substitution: substitutions?.change(forPeriods: spot.periodRange, group: preferredGroup),
+                            otherGroupSubstitution: substitutions?.otherGroupChange(
+                                forPeriods: spot.periodRange,
+                                group: preferredGroup
+                            ),
                             onTap: { detailSpot = spot },
                             onAddTask: { kind in
                                 newTask = NewTaskContext(
@@ -223,19 +334,21 @@ struct DayScheduleList: View {
                         )
                         // Stránkovací TabView drží v hierarchii všech pět dnů naráz,
                         // takže hledání podle názvu předmětu není jednoznačné.
-                        .accessibilityIdentifier("lesson-\(day.weekday.rawValue)-\(spot.periodRange.lowerBound)")
+                        .accessibilityIdentifier("lesson-\(weekdayNumber)-\(spot.periodRange.lowerBound)")
+
+                    case .extra(let extra):
+                        ExtraLessonCard(
+                            lesson: extra,
+                            periods: periods,
+                            subjects: subjects,
+                            isToday: isToday
+                        )
+                        .accessibilityIdentifier("extra-\(weekdayNumber)-\(extra.periods.lowerBound)")
                     }
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 44)
-            } else {
-                EmptyStateView(
-                    symbol: "moon.zzz",
-                    title: "Volný den",
-                    message: "Tenhle den nemáš v rozvrhu žádnou výuku."
-                )
-                .padding(.top, 60)
             }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 44)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .sheet(item: $detailSpot) { spot in
@@ -254,10 +367,92 @@ struct DayScheduleList: View {
                 kind: context.kind
             )
         }
+        .sheet(item: $editedTask) { task in
+            TaskEditorView(task: task, isNew: false)
+        }
+    }
+
+    // MARK: - Hlavička dne
+
+    /// Rozvrh je šablona bez dat, úkoly se ale váží na konkrétní den.
+    /// Hlavička říká, o který den jde, a co na něj připadá.
+    private var dayHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(DateFormatter.jecnaWeekdayLong.string(from: date).capitalizedFirst)
+                    .font(.headline)
+                if let relativeNote {
+                    Text(relativeNote)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(isToday ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            TaskSummaryChips(summary: tasks.summary(on: date))
+        }
+        .padding(.horizontal, 4)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var relativeNote: String? {
+        switch date.schoolDaysFromToday() {
+        case 0: "dnes"
+        case 1: "zítra"
+        default: date.isInNextWeek() ? "příští týden" : nil
+        }
+    }
+
+    private var unplacedTasksCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Na tento den", systemImage: "calendar.badge.clock")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+            ContentCard {
+                VStack(spacing: 0) {
+                    ForEach(Array(unplacedTasks.enumerated()), id: \.element.id) { index, task in
+                        if index > 0 { Divider().padding(.leading, 62) }
+                        Button {
+                            editedTask = task
+                        } label: {
+                            TaskRow(task: task, showsDueDate: false) {
+                                withAnimation(.smooth) { tasks.toggleDone(task) }
+                                Haptics.impact(.soft)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 2)
     }
 
     private func isOngoing(_ spot: LessonSpot) -> Bool {
         spot.isOngoing(at: .now(), periods: periods)
+    }
+
+    enum ScheduleItem: Identifiable {
+        case lesson(LessonSpot)
+        case extra(ExtraLesson)
+
+        var id: String {
+            switch self {
+            case .lesson(let spot): "lesson-\(spot.id)"
+            case .extra(let extra): "extra-\(extra.id)"
+            }
+        }
+
+        var startPeriod: Int {
+            switch self {
+            case .lesson(let spot): spot.periodRange.lowerBound
+            case .extra(let extra): extra.periods.lowerBound
+            }
+        }
     }
 
     /// Popis nově zakládaného záznamu, předvyplněný z hodiny v rozvrhu.
@@ -274,10 +469,13 @@ struct DayScheduleList: View {
 struct LessonCard: View {
     let spot: LessonSpot
     let periods: [LessonPeriod]
-    var preferredGroup: String?
+    var preferredGroup: Int?
     var isCurrent: Bool
     var tasks: [StudyTask] = []
+    /// Změna, která se studenta týká.
     var substitution: SubstitutionChange?
+    /// Změna jen pro druhou skupinu — kartu nepřebarví, jen se pod ní zmíní.
+    var otherGroupSubstitution: SubstitutionChange?
     var onTap: (() -> Void)?
     var onAddTask: ((StudyTaskKind) -> Void)?
 
@@ -343,6 +541,11 @@ struct LessonCard: View {
                     }
                 }
 
+                if let otherGroupSubstitution {
+                    if substitution == nil { Divider() }
+                    otherGroupNote(otherGroupSubstitution)
+                }
+
                 if !tasks.isEmpty {
                     Divider()
                     VStack(spacing: 8) {
@@ -396,6 +599,25 @@ struct LessonCard: View {
         }
     }
 
+    /// Změna pro druhou skupinu. Šedě a bez odznaku: studentovi se nic nemění,
+    /// ale kdyby měl skupinu nastavenou špatně, pozná to tady.
+    private func otherGroupNote(_ change: SubstitutionChange) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.2")
+                .font(.system(size: 9, weight: .semibold))
+            Text(otherGroupTitle(change) + ": " + (change.isCancelled ? "odpadá" : change.textWithoutGroup))
+                .font(.caption2)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func otherGroupTitle(_ change: SubstitutionChange) -> String {
+        change.groupNumber.map { "Jen \($0). skupina" } ?? "Jiná skupina"
+    }
+
     /// Úkol navázaný na tuhle hodinu. Jen informace — odškrtává se v detailu hodiny,
     /// aby karta zůstala jedním klepnutelným celkem.
     private func taskLine(_ task: StudyTask) -> some View {
@@ -426,8 +648,7 @@ struct LessonCard: View {
 
     /// Vlastní skupina studenta jde vždycky první.
     private var orderedLessons: [Lesson] {
-        guard let preferredGroup else { return spot.lessons }
-        return spot.lessons.sorted { lhs, _ in lhs.group == preferredGroup }
+        spot.lessons(preferringGroup: preferredGroup)
     }
 
     private var timeColumn: some View {
@@ -520,18 +741,138 @@ struct LessonCard: View {
     }
 }
 
+/// Hodina, kterou řádný rozvrh nemá, ale mimořádný ji přidává — třeba
+/// přesunutá z jiného dne. Oranžová jako ostatní změny, ať je hned vidět,
+/// že v běžném rozvrhu tahle hodina není.
+struct ExtraLessonCard: View {
+    let lesson: ExtraLesson
+    let periods: [LessonPeriod]
+    var subjects: [DisplayName] = []
+    var isToday = false
+
+    private var startPeriod: LessonPeriod? {
+        periods.first { $0.number == lesson.periods.lowerBound }
+    }
+    private var endPeriod: LessonPeriod? {
+        periods.first { $0.number == lesson.periods.upperBound }
+    }
+
+    /// Předmět podle zkratky v buňce. Když ho třída v rozvrhu nemá,
+    /// zůstane jen text z tabulky.
+    private var subject: DisplayName? {
+        guard let abbreviation = lesson.change.subjectAbbreviation else { return nil }
+        return subjects.first { $0.short?.caseInsensitiveCompare(abbreviation) == .orderedSame }
+    }
+
+    private var isCurrent: Bool {
+        guard isToday, let startPeriod, let endPeriod else { return false }
+        let now = TimeOfDay.now()
+        return now >= startPeriod.from && now <= endPeriod.to
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            timeColumn
+
+            HStack(alignment: .top, spacing: 12) {
+                if let subject {
+                    SubjectMonogram(name: subject, size: 38)
+                } else {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.orange.gradient, in: .rect(cornerRadius: 38 * 0.3, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(subject?.full ?? lesson.change.displayText)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        SubstitutionBadge(change: lesson.change)
+                        Text(lesson.change.isConfirmed ? "hodina navíc" : "hodina navíc • upřesní se")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(14)
+        .background(isCurrent ? Theme.accent.opacity(0.10) : Color.orange.opacity(0.06))
+        .background(.background.secondary, in: Theme.cardShape)
+        .overlay {
+            Theme.cardShape.strokeBorder(
+                isCurrent ? Theme.accent.opacity(0.55) : Color.orange.opacity(0.45),
+                lineWidth: 1.5
+            )
+        }
+        .clipShape(Theme.cardShape)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var timeColumn: some View {
+        VStack(spacing: 4) {
+            Text("\(lesson.periods.lowerBound)\(lesson.periods.count > 1 ? "–\(lesson.periods.upperBound)" : "")")
+                .font(.headline.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(isCurrent ? Theme.accent : .orange)
+
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.orange)
+
+            if let startPeriod, let endPeriod {
+                Text(startPeriod.from.formatted)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Rectangle()
+                    .fill(.quaternary)
+                    .frame(width: 1, height: 10)
+                Text(endPeriod.to.formatted)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 46)
+    }
+}
+
 // MARK: - Týdenní mřížka
 
 struct WeekGridView: View {
-    let page: TimetablePage
-    var preferredGroup: String?
-    /// Změny z mimořádného rozvrhu po dnech — v mřížce jde hlavně o to,
-    /// aby odpadlé hodiny šly poznat na první pohled.
+    let timetable: Timetable
+    var preferredGroup: Int?
+    /// Změny z mimořádného rozvrhu po dnech. Odpadlé i změněné hodiny mají
+    /// jít poznat na první pohled, stejně jako v denním přehledu.
     var substitutions: [Weekday: SubstitutionDay] = [:]
 
-    private var periods: [LessonPeriod] { page.timetable.occupiedPeriods }
+    @Environment(StudyTaskStore.self) private var store
+
+    /// Hodiny navíc ze suplování — ve volných hodinách řádného rozvrhu.
+    private var extraLessons: [Weekday: [ExtraLesson]] {
+        substitutions.reduce(into: [:]) { result, entry in
+            result[entry.key] = entry.value.extraLessons(outside: timetable.day(entry.key), group: preferredGroup)
+        }
+    }
+
+    /// Sloupce až po poslední hodinu, kdy se v týdnu něco děje — i když je
+    /// to hodina navíc, kterou řádný rozvrh nemá.
+    private func columns(extras: [Weekday: [ExtraLesson]]) -> [LessonPeriod] {
+        let occupied = timetable.occupiedPeriods
+        guard let lastExtra = extras.values.flatMap({ $0 }).map(\.periods.upperBound).max(),
+              lastExtra > occupied.last?.number ?? .max else { return occupied }
+        return timetable.periods.filter { $0.number <= lastExtra }
+    }
 
     var body: some View {
+        let extras = extraLessons
+        let periods = columns(extras: extras)
+
         ScrollView([.horizontal, .vertical]) {
             Grid(alignment: .topLeading, horizontalSpacing: 6, verticalSpacing: 6) {
                 GridRow {
@@ -550,76 +891,179 @@ struct WeekGridView: View {
 
                 ForEach(Weekday.allCases) { weekday in
                     GridRow {
-                        Text(weekday.shortName)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(weekday == Weekday.today() ? Theme.accent : .secondary)
-                            .frame(width: 34)
+                        dayLabel(weekday)
 
                         ForEach(periods) { period in
-                            gridCell(weekday: weekday, period: period)
+                            gridCell(weekday: weekday, period: period, extras: extras[weekday] ?? [])
                         }
                     }
                 }
             }
             .padding(18)
         }
+        // Menší mřížka než obrazovka se jinak vystředí a nad ní zůstane prázdný pruh.
+        .defaultScrollAnchor(.topLeading, for: .alignment)
         .scrollEdgeEffectStyle(.soft, for: .top)
     }
 
-    @ViewBuilder
-    private func gridCell(weekday: Weekday, period: LessonPeriod) -> some View {
-        let day = page.timetable.day(weekday)
-        let spot = day?.spot(atPeriod: period.number)
+    /// Den s datem a tečkami za úkoly — mřížka je jinak jen šablona bez dat.
+    private func dayLabel(_ weekday: Weekday) -> some View {
+        let date = weekday.nextOccurrence()
+        let isToday = weekday == Weekday.today()
 
-        if let spot, !spot.isEmpty {
-            // Vícehodinovka se vykreslí jen na svém začátku, ostatní buňky zůstanou tlumené.
+        return VStack(spacing: 2) {
+            Text(weekday.shortName)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isToday ? Theme.accent : .secondary)
+            Text(date.dayOfMonthLabel())
+                .font(.system(size: 9, weight: isToday ? .bold : .regular))
+                .monospacedDigit()
+                .foregroundStyle(isToday ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.tertiary))
+            TaskDayDots(summary: store.summary(on: date))
+        }
+        .frame(width: 34, height: 54)
+    }
+
+    private func gridCell(weekday: Weekday, period: LessonPeriod, extras: [ExtraLesson]) -> some View {
+        if let spot = timetable.day(weekday)?.spot(atPeriod: period.number), !spot.isEmpty {
             let isStart = spot.periodRange.lowerBound == period.number
-            let lesson = spot.lesson(preferringGroup: preferredGroup)
-            let isCancelled = substitutions[weekday]?.change(forPeriods: spot.periodRange)?.isCancelled == true
+            // Změna se hledá přes celý blok, ať je vícehodinovka obarvená celá.
+            return WeekGridCell(
+                spot: spot,
+                isStart: isStart,
+                preferredGroup: preferredGroup,
+                change: substitutions[weekday]?.change(forPeriods: spot.periodRange, group: preferredGroup),
+                tasks: isStart ? store.tasks(on: weekday.nextOccurrence(), periodRange: spot.periodRange) : []
+            )
+        }
 
-            VStack(spacing: 2) {
-                if isStart, let lesson {
-                    Text(lesson.subject.abbreviation)
-                        .font(.caption.weight(.bold))
-                        .strikethrough(isCancelled, color: Theme.cancelled)
-                        .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
-                        .lineLimit(1)
-                    if isCancelled {
-                        Label("odpadá", systemImage: "zzz")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Theme.cancelled)
-                            .lineLimit(1)
-                    } else {
-                        Text(lesson.classroom ?? "—")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                    }
-                    if spot.isSplit {
-                        Text(lesson.group ?? "")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                    }
-                } else {
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.tertiary)
-                }
+        let extra = extras.first { $0.periods.contains(period.number) }
+        return WeekGridCell(
+            spot: nil,
+            isStart: extra.map { $0.periods.lowerBound == period.number } ?? true,
+            preferredGroup: preferredGroup,
+            change: extra?.change
+        )
+    }
+}
+
+/// Jedna buňka týdenní mřížky. Změny vypadají jako na kartách v denním
+/// přehledu: odpadlá hodina je zelená, šrafovaná a s přerušovaným rámečkem,
+/// změněná oranžová s textem z tabulky suplování.
+private struct WeekGridCell: View {
+    let spot: LessonSpot?
+    /// Vícehodinovka se vykreslí jen na svém začátku, ostatní buňky zůstanou tlumené.
+    let isStart: Bool
+    var preferredGroup: Int?
+    var change: SubstitutionChange?
+    /// Úkoly a testy navázané na hodinu — ukážou se značkou v rohu.
+    var tasks: [StudyTask] = []
+
+    private let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+
+    /// Škrtá se jen skutečná hodina — ve volné hodině nemá co odpadnout.
+    private var isCancelled: Bool { spot != nil && change?.isCancelled == true }
+    private var isChanged: Bool { change != nil && change?.isCancelled != true }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            if let spot, isStart, let lesson = spot.lesson(preferringGroup: preferredGroup) {
+                lessonContent(lesson, isSplit: spot.isSplit)
+            } else if spot == nil, isStart, let change, isChanged {
+                // Hodina, která v řádném rozvrhu není — přidaná nebo přesunutá.
+                Image(systemName: "plus")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.orange)
+                changeText(change, lineLimit: 2)
+            } else if spot != nil || isChanged {
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 9))
+                    .foregroundStyle(isChanged ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
             }
-            .frame(width: 78, height: 54)
-            .background {
-                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-                if isCancelled {
-                    shape.fill(Theme.cancelled.opacity(isStart ? 0.14 : 0.06))
-                    HatchPattern(color: Theme.cancelled.opacity(0.14), spacing: 7, lineWidth: 1.5)
-                        .clipShape(shape)
-                } else {
-                    shape.fill(Theme.accent.opacity(isStart ? 0.12 : 0.05))
-                }
+        }
+        .padding(.horizontal, 4)
+        .frame(width: 78, height: 54)
+        .background { background }
+        .overlay { border }
+        .overlay(alignment: .topTrailing) {
+            TaskCornerMark(tasks: tasks)
+                .offset(x: 3, y: -3)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func lessonContent(_ lesson: Lesson, isSplit: Bool) -> some View {
+        HStack(spacing: 3) {
+            if isChanged {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.orange)
             }
+            Text(lesson.subject.abbreviation)
+                .font(.caption.weight(.bold))
+                .strikethrough(isCancelled, color: Theme.cancelled)
+                .foregroundStyle(isCancelled ? Color.secondary : Color.primary)
+        }
+        .lineLimit(1)
+
+        if isCancelled {
+            Label("odpadá", systemImage: "zzz")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Theme.cancelled)
+                .lineLimit(1)
+        } else if let change {
+            // Učebna a vyučující ze suplování nahrazují ty z řádného rozvrhu.
+            changeText(change, lineLimit: isSplit ? 1 : 2)
         } else {
-            Color.secondary.opacity(0.06)
-                .frame(width: 78, height: 54)
-                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+            Text(lesson.classroom ?? "—")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+
+        if isSplit {
+            Text(lesson.group ?? "")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+        }
+    }
+
+    /// Text buňky z tabulky suplování. Do úzké buňky se nevejde vždycky,
+    /// proto se smí zalomit a trochu zmenšit.
+    private func changeText(_ change: SubstitutionChange, lineLimit: Int) -> some View {
+        Text(change.displayText)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(.orange)
+            .multilineTextAlignment(.center)
+            .lineLimit(lineLimit)
+            .minimumScaleFactor(0.8)
+    }
+
+    @ViewBuilder
+    private var background: some View {
+        if isCancelled {
+            shape.fill(Theme.cancelled.opacity(isStart ? 0.14 : 0.06))
+            HatchPattern(color: Theme.cancelled.opacity(0.14), spacing: 7, lineWidth: 1.5)
+                .clipShape(shape)
+        } else if isChanged {
+            shape.fill(Color.orange.opacity(isStart ? 0.14 : 0.06))
+        } else if spot != nil {
+            shape.fill(Theme.accent.opacity(isStart ? 0.12 : 0.05))
+        } else {
+            shape.fill(Color.secondary.opacity(0.06))
+        }
+    }
+
+    @ViewBuilder
+    private var border: some View {
+        if isCancelled {
+            // Přerušovaný rámeček jako u karty: hodina v rozvrhu je, ale neplatí.
+            shape.strokeBorder(
+                Theme.cancelled.opacity(0.55),
+                style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])
+            )
+        } else if isChanged {
+            shape.strokeBorder(Color.orange.opacity(0.5), lineWidth: 1.2)
         }
     }
 }

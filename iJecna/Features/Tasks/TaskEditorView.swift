@@ -219,15 +219,15 @@ struct TaskEditorView: View {
 
     /// Hodiny z rozvrhu pro zvolený den. U dělených hodin bereme skupinu studenta.
     private var lessonOptions: [LessonOption] {
-        guard let page = model.timetable.value,
+        guard let timetable = model.visibleTimetable,
               let weekday = Weekday.from(calendarWeekday: Calendar.prague.component(.weekday, from: draft.dueDate)),
-              let day = page.timetable.day(weekday) else { return [] }
+              let day = timetable.day(weekday) else { return [] }
 
-        let group = model.profile.value?.primaryGroup
+        let group = model.classGroup
 
         return day.lessonSpots.compactMap { spot in
             guard let lesson = spot.lesson(preferringGroup: group),
-                  let period = page.timetable.period(number: spot.periodRange.lowerBound) else { return nil }
+                  let period = timetable.period(number: spot.periodRange.lowerBound) else { return nil }
             return LessonOption(periodNumber: period.number, subject: lesson.subject, start: period.from)
         }
     }

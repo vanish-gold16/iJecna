@@ -8,7 +8,7 @@ struct LessonDetailSheet: View {
     let spot: LessonSpot
     let periods: [LessonPeriod]
     let date: Date
-    var preferredGroup: String?
+    var preferredGroup: Int?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(StudyTaskStore.self) private var store
@@ -17,8 +17,13 @@ struct LessonDetailSheet: View {
     @State private var editedTask: StudyTask?
 
     private var lessons: [Lesson] {
-        guard let preferredGroup else { return spot.lessons }
-        return spot.lessons.sorted { lhs, _ in lhs.group == preferredGroup }
+        spot.lessons(preferringGroup: preferredGroup)
+    }
+
+    /// „Tvoje skupina“ jen když opravdu sedí — první v pořadí může být
+    /// i proto, že skupinu neznáme.
+    private func isOwnGroup(_ lesson: Lesson) -> Bool {
+        preferredGroup != nil && lesson.groupNumber == preferredGroup
     }
 
     private var primaryLesson: Lesson? { lessons.first }
@@ -121,7 +126,7 @@ struct LessonDetailSheet: View {
                         HStack(spacing: 10) {
                             Text(lesson.group ?? "—")
                                 .font(.caption.weight(.bold))
-                                .foregroundStyle(index == 0 ? Theme.accent : .secondary)
+                                .foregroundStyle(isOwnGroup(lesson) ? Theme.accent : .secondary)
                                 .frame(width: 36, alignment: .leading)
 
                             VStack(alignment: .leading, spacing: 1) {
@@ -132,7 +137,7 @@ struct LessonDetailSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if index == 0 {
+                            if isOwnGroup(lesson) {
                                 Text("tvoje skupina")
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
