@@ -17,20 +17,20 @@ final class NetworkingTests: XCTestCase {
         let url = JecnaEndpoint.grades(year: SchoolYear(2025), half: .second).url(base: base)
         XCTAssertEqual(
             url.absoluteString,
-            "https://www.spsejecna.cz/score/student?schoolYearId=17&schoolYearHalfId=22"
+            "https://spsejecna.cz/score/student?schoolYearId=17&schoolYearHalfId=22"
         )
     }
 
     func testGradesURLWithoutHalfOmitsParameter() {
         let url = JecnaEndpoint.grades(year: SchoolYear(2026), half: nil).url(base: base)
-        XCTAssertEqual(url.absoluteString, "https://www.spsejecna.cz/score/student?schoolYearId=18")
+        XCTAssertEqual(url.absoluteString, "https://spsejecna.cz/score/student?schoolYearId=18")
     }
 
     func testTimetableURLCarriesPeriodId() {
         let url = JecnaEndpoint.timetable(year: SchoolYear(2026), periodId: 215).url(base: base)
         XCTAssertEqual(
             url.absoluteString,
-            "https://www.spsejecna.cz/timetable/class?schoolYearId=18&timetableId=215"
+            "https://spsejecna.cz/timetable/class?schoolYearId=18&timetableId=215"
         )
     }
 
@@ -44,11 +44,11 @@ final class NetworkingTests: XCTestCase {
     func testPathEndpointsIncludeIdentifier() {
         XCTAssertEqual(
             JecnaEndpoint.teacher(tag: "BC").url(base: base).absoluteString,
-            "https://www.spsejecna.cz/ucitel/BC"
+            "https://spsejecna.cz/ucitel/BC"
         )
         XCTAssertEqual(
             JecnaEndpoint.notification(recordId: 7314).url(base: base).absoluteString,
-            "https://www.spsejecna.cz/user-student/record?userStudentRecordId=7314"
+            "https://spsejecna.cz/user-student/record?userStudentRecordId=7314"
         )
     }
 
@@ -58,7 +58,7 @@ final class NetworkingTests: XCTestCase {
         let response = JecnaResponse(
             statusCode: 302,
             body: "",
-            location: "https://www.spsejecna.cz/user/need-login"
+            location: "https://spsejecna.cz/user/need-login"
         )
         XCTAssertTrue(response.isRedirect)
         XCTAssertEqual(response.redirectPath, "/user/need-login")
